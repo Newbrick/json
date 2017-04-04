@@ -1,11 +1,11 @@
 /*
     __ _____ _____ _____
  __|  |   __|     |   | |  JSON for Modern C++ (test suite)
-|  |  |__   |  |  | | | |  version 2.0.9
+|  |  |__   |  |  | | | |  version 2.1.1
 |_____|_____|_____|_|___|  https://github.com/nlohmann/json
 
 Licensed under the MIT License <http://opensource.org/licenses/MIT>.
-Copyright (c) 2013-2016 Niels Lohmann <http://nlohmann.me>.
+Copyright (c) 2013-2017 Niels Lohmann <http://nlohmann.me>.
 
 Permission is hereby  granted, free of charge, to any  person obtaining a copy
 of this software and associated  documentation files (the "Software"), to deal
@@ -583,10 +583,11 @@ TEST_CASE("modifiers")
 
             SECTION("insert nothing (count = 0)")
             {
-                auto pos = j_array.end();
                 auto it = j_array.insert(j_array.end(), 0, 5);
                 CHECK(j_array.size() == 4);
-                CHECK(it == pos);
+                // the returned iterator points to the first inserted element;
+                // there were 4 elements, so it should point to the 5th
+                CHECK(it == j_array.begin() + 4);
                 CHECK(j_array == json({1, 2, 3, 4}));
             }
         }

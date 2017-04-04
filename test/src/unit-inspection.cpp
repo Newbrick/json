@@ -1,11 +1,11 @@
 /*
     __ _____ _____ _____
  __|  |   __|     |   | |  JSON for Modern C++ (test suite)
-|  |  |__   |  |  | | | |  version 2.0.9
+|  |  |__   |  |  | | | |  version 2.1.1
 |_____|_____|_____|_|___|  https://github.com/nlohmann/json
 
 Licensed under the MIT License <http://opensource.org/licenses/MIT>.
-Copyright (c) 2013-2016 Niels Lohmann <http://nlohmann.me>.
+Copyright (c) 2013-2017 Niels Lohmann <http://nlohmann.me>.
 
 Permission is hereby  granted, free of charge, to any  person obtaining a copy
 of this software and associated  documentation files (the "Software"), to deal
@@ -213,6 +213,18 @@ TEST_CASE("object inspection")
                   "{\n    \"array\": [\n        1,\n        2,\n        3,\n        4\n    ],\n    \"boolean\": false,\n    \"null\": null,\n    \"number\": 42,\n    \"object\": {},\n    \"string\": \"Hello world\"\n}");
         }
 
+        SECTION("indent=x")
+        {
+            CHECK(j.dump().size() == 94);
+            CHECK(j.dump(1).size() == 127);
+            CHECK(j.dump(2).size() == 142);
+            CHECK(j.dump(512).size() == 7792);
+
+            // important test, because it yields a resize of the indent_string
+            // inside the dump() function
+            CHECK(j.dump(1024).size() == 15472);
+        }
+
         SECTION("dump and floating-point numbers")
         {
             auto s = json(42.23).dump();
@@ -250,14 +262,28 @@ TEST_CASE("object inspection")
             ss.str(std::string());
 
             // use stringstream for JSON serialization
-            json j_number = 3.141592653589793;
+            json j_number = 3.14159265358979;
             ss << j_number;
 
             // check that precision has been overridden during serialization
-            CHECK(ss.str() == "3.141592653589793");
+            CHECK(ss.str() == "3.14159265358979");
 
             // check that precision has been restored
             CHECK(ss.precision() == 3);
+        }
+    }
+
+    SECTION("round trips")
+    {
+        for (const auto& s :
+    {"3.141592653589793", "1000000000000000010E5"
+    })
+        {
+            json j1 = json::parse(s);
+            std::string s1 = j1.dump();
+            json j2 = json::parse(s1);
+            std::string s2 = j2.dump();
+            CHECK(s1 == s2);
         }
     }
 

@@ -1,11 +1,11 @@
 /*
     __ _____ _____ _____
  __|  |   __|     |   | |  JSON for Modern C++ (test suite)
-|  |  |__   |  |  | | | |  version 2.0.9
+|  |  |__   |  |  | | | |  version 2.1.1
 |_____|_____|_____|_|___|  https://github.com/nlohmann/json
 
 Licensed under the MIT License <http://opensource.org/licenses/MIT>.
-Copyright (c) 2013-2016 Niels Lohmann <http://nlohmann.me>.
+Copyright (c) 2013-2017 Niels Lohmann <http://nlohmann.me>.
 
 Permission is hereby  granted, free of charge, to any  person obtaining a copy
 of this software and associated  documentation files (the "Software"), to deal
@@ -699,6 +699,15 @@ TEST_CASE("constructors")
             json j(n);
             CHECK(j.type() == json::value_t::number_float);
         }
+
+        SECTION("infinity")
+        {
+            // infinity is stored as null
+            // should change in the future: https://github.com/nlohmann/json/issues/388
+            json::number_float_t n(std::numeric_limits<json::number_float_t>::infinity());
+            json j(n);
+            CHECK(j.type() == json::value_t::null);
+        }
     }
 
     SECTION("create a floating-point number (implicit)")
@@ -725,7 +734,7 @@ TEST_CASE("constructors")
 
         SECTION("long double")
         {
-            long double n = 42.23;
+            long double n = 42.23l;
             json j(n);
             CHECK(j.type() == json::value_t::number_float);
             CHECK(j.m_value.number_float == Approx(j_reference.m_value.number_float));
@@ -912,7 +921,7 @@ TEST_CASE("constructors")
 
             SECTION("array")
             {
-                json j { {"one", 1}, {"two", 1u}, {"three", 2.2}, {"four", false} , 13 };
+                json j { {"one", 1}, {"two", 1u}, {"three", 2.2}, {"four", false}, 13 };
                 CHECK(j.type() == json::value_t::array);
             }
         }
@@ -1270,42 +1279,6 @@ TEST_CASE("constructors")
                     }
                 }
             }
-        }
-    }
-
-    SECTION("create a JSON value from an input stream")
-    {
-        SECTION("std::stringstream")
-        {
-            std::stringstream ss;
-            ss << "[\"foo\",1,2,3,false,{\"one\":1}]";
-            json j(ss);
-            CHECK(j == json({"foo", 1, 2, 3, false, {{"one", 1}}}));
-        }
-
-        SECTION("with callback function")
-        {
-            std::stringstream ss;
-            ss << "[\"foo\",1,2,3,false,{\"one\":1}]";
-            json j(ss, [](int, json::parse_event_t, const json & val)
-            {
-                // filter all number(2) elements
-                if (val == json(2))
-                {
-                    return false;
-                }
-                else
-                {
-                    return true;
-                }
-            });
-            CHECK(j == json({"foo", 1, 3, false, {{"one", 1}}}));
-        }
-
-        SECTION("std::ifstream")
-        {
-            std::ifstream f("test/data/json_tests/pass1.json");
-            json j(f);
         }
     }
 }
