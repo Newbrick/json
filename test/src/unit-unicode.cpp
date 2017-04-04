@@ -1,11 +1,11 @@
 /*
     __ _____ _____ _____
  __|  |   __|     |   | |  JSON for Modern C++ (test suite)
-|  |  |__   |  |  | | | |  version 2.0.9
+|  |  |__   |  |  | | | |  version 2.1.1
 |_____|_____|_____|_|___|  https://github.com/nlohmann/json
 
 Licensed under the MIT License <http://opensource.org/licenses/MIT>.
-Copyright (c) 2013-2016 Niels Lohmann <http://nlohmann.me>.
+Copyright (c) 2013-2017 Niels Lohmann <http://nlohmann.me>.
 
 Permission is hereby  granted, free of charge, to any  person obtaining a copy
 of this software and associated  documentation files (the "Software"), to deal
@@ -38,6 +38,9 @@ TEST_CASE("Unicode", "[hide]")
 {
     SECTION("full enumeration of Unicode code points")
     {
+        // lexer to call to_unicode on
+        json::lexer dummy_lexer(reinterpret_cast<const json::lexer::lexer_char_t*>(""), 0);
+
         // create an escaped string from a code point
         const auto codepoint_to_unicode = [](std::size_t cp)
         {
@@ -85,7 +88,7 @@ TEST_CASE("Unicode", "[hide]")
                 // they are checked with codepoint_to_unicode.
                 if (cp > 0x1f and cp != 0x22 and cp != 0x5c)
                 {
-                    unescaped_string = json::lexer::to_unicode(cp);
+                    unescaped_string = dummy_lexer.to_unicode(cp);
                 }
             }
             else
@@ -97,7 +100,7 @@ TEST_CASE("Unicode", "[hide]")
                 const auto codepoint2 = 0xdc00u + ((cp - 0x10000u) & 0x3ffu);
                 escaped_string = codepoint_to_unicode(codepoint1);
                 escaped_string += codepoint_to_unicode(codepoint2);
-                unescaped_string += json::lexer::to_unicode(codepoint1, codepoint2);
+                unescaped_string += dummy_lexer.to_unicode(codepoint1, codepoint2);
             }
 
             // all other code points are valid and must not yield parse errors
@@ -122,7 +125,7 @@ TEST_CASE("Unicode", "[hide]")
         // strings in a JSON array
         std::ifstream f("test/data/json_nlohmann_tests/all_unicode.json");
         json j;
-        CHECK_NOTHROW(j << f);
+        CHECK_NOTHROW(f >> j);
 
         // the array has 1112064 + 1 elemnts (a terminating "null" value)
         // Note: 1112064 = 0x1FFFFF code points - 2048 invalid values between
@@ -165,12 +168,12 @@ TEST_CASE("Unicode", "[hide]")
         // read a file with a UTF-8 BOM
         std::ifstream f("test/data/json_nlohmann_tests/bom.json");
         json j;
-        CHECK_NOTHROW(j << f);
+        CHECK_NOTHROW(f >> j);
     }
 
     SECTION("error for incomplete/wrong BOM")
     {
-        CHECK_THROWS_AS(json::parse("\xef\xbb"), std::invalid_argument);
-        CHECK_THROWS_AS(json::parse("\xef\xbb\xbb"), std::invalid_argument);
+        CHECK_THROWS_AS(json::parse("\xef\xbb"), json::parse_error);
+        CHECK_THROWS_AS(json::parse("\xef\xbb\xbb"), json::parse_error);
     }
 }

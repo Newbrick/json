@@ -1,7 +1,7 @@
 .PHONY: pretty clean ChangeLog.md
 
 # used programs
-RE2C = re2c
+RE2C := $(shell command -v re2c 2> /dev/null)
 SED = sed
 
 # main target
@@ -40,6 +40,91 @@ check-fast:
 doctest:
 	$(MAKE) check_output -C doc
 
+
+##########################################################################
+# warning detector
+##########################################################################
+
+# calling Clang with all warnings, except:
+# -Wno-documentation-unknown-command: code uses user-defined commands like @complexity
+# -Wno-exit-time-destructors: warning in Catch code
+# -Wno-keyword-macro: unit-tests use "#define private public"
+# -Wno-deprecated-declarations: the library deprecated some functions
+# -Wno-weak-vtables: exception class is defined inline, but has virtual method
+# -Wno-range-loop-analysis: iterator_wrapper tests tests "for(const auto i...)"
+pedantic_clang:
+	$(MAKE) json_unit CXXFLAGS="\
+		-std=c++11 \
+		-Werror \
+		-Weverything \
+		-Wno-documentation-unknown-command \
+		-Wno-exit-time-destructors \
+		-Wno-keyword-macro \
+		-Wno-deprecated-declarations \
+		-Wno-weak-vtables \
+		-Wno-range-loop-analysis"
+
+# calling GCC with most warnings
+pedantic_gcc:
+	$(MAKE) json_unit CXX=g++ CXXFLAGS="\
+		-std=c++11 \
+		-Wno-deprecated-declarations \
+		-Werror \
+		-Wall -Wpedantic -Wextra \
+		-Walloca \
+		-Warray-bounds=2 \
+		-Wcast-qual -Wcast-align \
+		-Wchar-subscripts \
+		-Wconditionally-supported \
+		-Wconversion \
+		-Wdate-time \
+		-Wdeprecated \
+		-Wdisabled-optimization \
+		-Wdouble-promotion \
+		-Wduplicated-branches \
+		-Wduplicated-cond \
+		-Weffc++ \
+		-Wformat-overflow=2 \
+		-Wformat-signedness \
+		-Wformat-truncation=2 \
+		-Wformat=2 \
+		-Wimplicit-fallthrough=5 \
+		-Wlogical-op \
+		-Wmissing-declarations \
+		-Wmissing-format-attribute \
+		-Wmissing-include-dirs \
+		-Wnoexcept \
+		-Wnonnull \
+		-Wnull-dereference \
+		-Wold-style-cast \
+		-Woverloaded-virtual \
+		-Wparentheses \
+		-Wplacement-new=2 \
+		-Wredundant-decls \
+		-Wreorder \
+		-Wrestrict \
+		-Wshadow=global \
+		-Wshift-overflow=2 \
+		-Wsign-conversion \
+		-Wsign-promo \
+		-Wsized-deallocation \
+		-Wstrict-overflow=5 \
+		-Wsuggest-attribute=const \
+		-Wsuggest-attribute=format \
+		-Wsuggest-attribute=noreturn \
+		-Wsuggest-attribute=pure \
+		-Wsuggest-final-methods \
+		-Wsuggest-final-types \
+		-Wsuggest-override \
+		-Wtrigraphs \
+		-Wundef \
+		-Wuninitialized -Wunknown-pragmas \
+		-Wunused \
+		-Wunused-const-variable=2 \
+		-Wunused-macros \
+		-Wunused-parameter \
+		-Wuseless-cast \
+		-Wvariadic-macros"
 
 ##########################################################################
 # fuzzing
@@ -92,8 +177,9 @@ fuzzing-stop:
 cppcheck:
 	cppcheck --enable=warning --inconclusive --force --std=c++11 src/json.hpp --error-exitcode=1
 
+# run clang sanitize (we are overrding the CXXFLAGS provided by travis in order to use gcc's libstdc++)
 clang_sanitize: clean
-	CXX=clang++ CXXFLAGS="-g -O2 -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer" $(MAKE)
+	CXX=clang++ CXXFLAGS="-g -O2 -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer" $(MAKE) check
 
 
 ##########################################################################
@@ -102,6 +188,9 @@ clang_sanitize: clean
 
 # create scanner with re2c
 re2c: src/json.hpp.re2c
+ifndef RE2C
+	$(error "re2c is not available, please install re2c")
+endif
 	$(RE2C) -W --utf-8 --encoding-policy fail --bit-vectors --nested-ifs --no-debug-info $< | $(SED) '1d' > src/json.hpp
 
 # pretty printer

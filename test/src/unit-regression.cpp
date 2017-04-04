@@ -1,11 +1,11 @@
 /*
     __ _____ _____ _____
  __|  |   __|     |   | |  JSON for Modern C++ (test suite)
-|  |  |__   |  |  | | | |  version 2.0.9
+|  |  |__   |  |  | | | |  version 2.1.1
 |_____|_____|_____|_|___|  https://github.com/nlohmann/json
 
 Licensed under the MIT License <http://opensource.org/licenses/MIT>.
-Copyright (c) 2013-2016 Niels Lohmann <http://nlohmann.me>.
+Copyright (c) 2013-2017 Niels Lohmann <http://nlohmann.me>.
 
 Permission is hereby  granted, free of charge, to any  person obtaining a copy
 of this software and associated  documentation files (the "Software"), to deal
@@ -28,10 +28,12 @@ SOFTWARE.
 
 #include "catch.hpp"
 
+#define private public
 #include "json.hpp"
 using nlohmann::json;
 
 #include <fstream>
+#include <list>
 
 TEST_CASE("regression tests")
 {
@@ -48,6 +50,7 @@ TEST_CASE("regression tests")
 
     SECTION("issue #70 - Handle infinity and NaN cases")
     {
+        /*
         SECTION("NAN value")
         {
             CHECK(json(NAN) == json());
@@ -59,13 +62,54 @@ TEST_CASE("regression tests")
             CHECK(json(INFINITY) == json());
             CHECK(json(json::number_float_t(INFINITY)) == json());
         }
+        */
+
+        // With 3.0.0, the semantics of this changed: NAN and infinity are
+        // stored properly inside the JSON value (no exception or conversion
+        // to null), but are serialized as null.
+        SECTION("NAN value")
+        {
+            json j1 = NAN;
+            CHECK(j1.is_number_float());
+            json::number_float_t f1 = j1;
+            CHECK(std::isnan(f1));
+
+            json j2 = json::number_float_t(NAN);
+            CHECK(j2.is_number_float());
+            json::number_float_t f2 = j2;
+            CHECK(std::isnan(f2));
+        }
+
+        SECTION("infinity")
+        {
+            json j1 = INFINITY;
+            CHECK(j1.is_number_float());
+            json::number_float_t f1 = j1;
+            CHECK(not std::isfinite(f1));
+
+            json j2 = json::number_float_t(INFINITY);
+            CHECK(j2.is_number_float());
+            json::number_float_t f2 = j2;
+            CHECK(not std::isfinite(f2));
+        }
     }
 
     SECTION("pull request #71 - handle enum type")
     {
-        enum { t = 0 };
+        enum { t = 0, u = 102};
         json j = json::array();
         j.push_back(t);
+
+        // maybe this is not the place to test this?
+        json j2 = u;
+
+        auto anon_enum_value = j2.get<decltype(u)>();
+        CHECK(u == anon_enum_value);
+
+        // check if the actual value was stored
+        CHECK(j2 == 102);
+
+        static_assert(std::is_same<decltype(anon_enum_value), decltype(u)>::value, "");
 
         j.push_back(json::object(
         {
@@ -172,6 +216,8 @@ TEST_CASE("regression tests")
         {
             json a = {1, 2, 3};
             json::reverse_iterator rit = ++a.rbegin();
+            CHECK(*rit == json(2));
+            CHECK(rit.value() == json(2));
         }
         {
             json a = {1, 2, 3};
@@ -342,8 +388,8 @@ TEST_CASE("regression tests")
 
         // double
         nlohmann::basic_json<std::map, std::vector, std::string, bool, int64_t, uint64_t, double> j_double =
-            1.23e35f;
-        CHECK(j_double.get<double>() == 1.23e35f);
+            1.23e35;
+        CHECK(j_double.get<double>() == 1.23e35);
 
         // long double
         nlohmann::basic_json<std::map, std::vector, std::string, bool, int64_t, uint64_t, long double>
@@ -353,8 +399,8 @@ TEST_CASE("regression tests")
 
     SECTION("issue #228 - double values are serialized with commas as decimal points")
     {
-        json j1a = 23.42;
-        json j1b = json::parse("23.42");
+        json j1a = 2312.42;
+        json j1b = json::parse("2312.42");
 
         json j2a = 2342e-2;
         //issue #230
@@ -368,37 +414,70 @@ TEST_CASE("regression tests")
         class CommaDecimalSeparator : public std::numpunct<char>
         {
           protected:
-            char do_decimal_point() const
+            char do_decimal_point() const override
             {
                 return ',';
+            }
+
+            char do_thousands_sep() const override
+            {
+                return '.';
+            }
+
+            std::string do_grouping() const override
+            {
+                return "\03";
             }
         };
 
         // change locale to mess with decimal points
-        std::locale::global(std::locale(std::locale(), new CommaDecimalSeparator));
+        auto orig_locale = std::locale::global(std::locale(std::locale(), new CommaDecimalSeparator));
 
-        CHECK(j1a.dump() == "23.42");
-        CHECK(j1b.dump() == "23.42");
+        CHECK(j1a.dump() == "2312.42");
+        CHECK(j1b.dump() == "2312.42");
 
         // check if locale is properly reset
         std::stringstream ss;
         ss.imbue(std::locale(std::locale(), new CommaDecimalSeparator));
-        ss << 47.11;
-        CHECK(ss.str() == "47,11");
+        ss << 4712.11;
+        CHECK(ss.str() == "4.712,11");
         ss << j1a;
-        CHECK(ss.str() == "47,1123.42");
+        CHECK(ss.str() == "4.712,112312.42");
         ss << 47.11;
-        CHECK(ss.str() == "47,1123.4247,11");
+        CHECK(ss.str() == "4.712,112312.4247,11");
 
         CHECK(j2a.dump() == "23.42");
         //issue #230
         //CHECK(j2b.dump() == "23.42");
 
-        CHECK(j3a.dump() == "10000");
-        CHECK(j3b.dump() == "10000");
-        CHECK(j3c.dump() == "10000");
+        CHECK(j3a.dump() == "10000.0");
+        CHECK(j3b.dump() == "10000.0");
+        CHECK(j3c.dump() == "10000.0");
         //CHECK(j3b.dump() == "1E04"); // roundtrip error
         //CHECK(j3c.dump() == "1e04"); // roundtrip error
+
+        std::locale::global(orig_locale);
+    }
+
+    SECTION("issue #378 - locale-independent num-to-str")
+    {
+        setlocale(LC_NUMERIC, "de_DE.UTF-8");
+
+        // verify that dumped correctly with '.' and no grouping
+        const json j1 = 12345.67;
+        CHECK(json(12345.67).dump() == "12345.67");
+        setlocale(LC_NUMERIC, "C");
+    }
+
+    SECTION("issue #379 - locale-independent str-to-num")
+    {
+        setlocale(LC_NUMERIC, "de_DE.UTF-8");
+
+        // verify that parsed correctly despite using strtod internally
+        CHECK(json::parse("3.14").get<double>() == 3.14);
+
+        // check a different code path
+        CHECK(json::parse("1.000000000000000000000000000000000000000000000000000000000000000000000000").get<double>() == 1.0);
     }
 
     SECTION("issue #233 - Can't use basic_json::iterator as a base iterator for std::move_iterator")
@@ -463,7 +542,7 @@ TEST_CASE("regression tests")
             CAPTURE(filename);
             json j;
             std::ifstream f(filename);
-            CHECK_NOTHROW(j << f);
+            CHECK_NOTHROW(f >> j);
         }
     }
 
@@ -479,7 +558,7 @@ TEST_CASE("regression tests")
             CAPTURE(filename);
             json j;
             std::ifstream f(filename);
-            CHECK_NOTHROW(j << f);
+            CHECK_NOTHROW(f >> j);
         }
     }
 
@@ -492,14 +571,16 @@ TEST_CASE("regression tests")
 
     SECTION("issue #329 - serialized value not always can be parsed")
     {
-        json j = json::parse("22e2222");
-        CHECK(j == json());
+        CHECK_THROWS_AS(json::parse("22e2222"), json::out_of_range);
+        CHECK_THROWS_WITH(json::parse("22e2222"),
+                          "[json.exception.out_of_range.406] number overflow parsing '22e2222'");
     }
 
     SECTION("issue #366 - json::parse on failed stream gets stuck")
     {
         std::ifstream f("file_not_found.json");
-        CHECK_THROWS_AS(json::parse(f), std::invalid_argument);
+        CHECK_THROWS_AS(json::parse(f), json::parse_error);
+        CHECK_THROWS_WITH(json::parse(f), "[json.exception.parse_error.111] parse error: bad input stream");
     }
 
     SECTION("issue #367 - calling stream at EOF")
@@ -507,14 +588,15 @@ TEST_CASE("regression tests")
         std::stringstream ss;
         json j;
         ss << "123";
-        CHECK_NOTHROW(j << ss);
+        CHECK_NOTHROW(ss >> j);
 
         // see https://github.com/nlohmann/json/issues/367#issuecomment-262841893:
         // ss is not at EOF; this yielded an error before the fix
         // (threw basic_string::append). No, it should just throw
         // a parse error because of the EOF.
-        CHECK_THROWS_AS(j << ss, std::invalid_argument);
-        CHECK_THROWS_WITH(j << ss, "parse error - unexpected end of input");
+        CHECK_THROWS_AS(ss >> j, json::parse_error);
+        CHECK_THROWS_WITH(ss >> j,
+                          "[json.exception.parse_error.101] parse error at 1: parse error - unexpected end of input");
     }
 
     SECTION("issue #389 - Integer-overflow (OSS-Fuzz issue 267)")
@@ -545,40 +627,54 @@ TEST_CASE("regression tests")
     {
         // original test case
         std::vector<uint8_t> vec {0x65, 0xf5, 0x0a, 0x48, 0x21};
-        CHECK_THROWS_AS(json::from_cbor(vec), std::out_of_range);
+        CHECK_THROWS_AS(json::from_cbor(vec), json::parse_error);
+        CHECK_THROWS_WITH(json::from_cbor(vec),
+                          "[json.exception.parse_error.110] parse error at 2: cannot read 5 bytes from vector");
     }
 
     SECTION("issue #407 - Heap-buffer-overflow (OSS-Fuzz issue 343)")
     {
         // original test case: incomplete float64
         std::vector<uint8_t> vec1 {0xcb, 0x8f, 0x0a};
-        CHECK_THROWS_AS(json::from_msgpack(vec1), std::out_of_range);
+        CHECK_THROWS_AS(json::from_msgpack(vec1), json::parse_error);
+        CHECK_THROWS_WITH(json::from_msgpack(vec1),
+                          "[json.exception.parse_error.110] parse error at 2: cannot read 8 bytes from vector");
 
         // related test case: incomplete float32
         std::vector<uint8_t> vec2 {0xca, 0x8f, 0x0a};
-        CHECK_THROWS_AS(json::from_msgpack(vec2), std::out_of_range);
+        CHECK_THROWS_AS(json::from_msgpack(vec2), json::parse_error);
+        CHECK_THROWS_WITH(json::from_msgpack(vec2),
+                          "[json.exception.parse_error.110] parse error at 2: cannot read 4 bytes from vector");
 
         // related test case: incomplete Half-Precision Float (CBOR)
         std::vector<uint8_t> vec3 {0xf9, 0x8f};
-        CHECK_THROWS_AS(json::from_cbor(vec3), std::out_of_range);
+        CHECK_THROWS_AS(json::from_cbor(vec3), json::parse_error);
+        CHECK_THROWS_WITH(json::from_cbor(vec3),
+                          "[json.exception.parse_error.110] parse error at 2: cannot read 2 bytes from vector");
 
         // related test case: incomplete Single-Precision Float (CBOR)
         std::vector<uint8_t> vec4 {0xfa, 0x8f, 0x0a};
-        CHECK_THROWS_AS(json::from_cbor(vec4), std::out_of_range);
+        CHECK_THROWS_AS(json::from_cbor(vec4), json::parse_error);
+        CHECK_THROWS_WITH(json::from_cbor(vec4),
+                          "[json.exception.parse_error.110] parse error at 2: cannot read 4 bytes from vector");
 
         // related test case: incomplete Double-Precision Float (CBOR)
         std::vector<uint8_t> vec5 {0xfb, 0x8f, 0x0a};
-        CHECK_THROWS_AS(json::from_cbor(vec5), std::out_of_range);
+        CHECK_THROWS_AS(json::from_cbor(vec5), json::parse_error);
+        CHECK_THROWS_WITH(json::from_cbor(vec5),
+                          "[json.exception.parse_error.110] parse error at 2: cannot read 8 bytes from vector");
     }
 
     SECTION("issue #408 - Heap-buffer-overflow (OSS-Fuzz issue 344)")
     {
         // original test case
         std::vector<uint8_t> vec1 {0x87};
-        CHECK_THROWS_AS(json::from_msgpack(vec1), std::out_of_range);
+        CHECK_THROWS_AS(json::from_msgpack(vec1), json::parse_error);
+        CHECK_THROWS_WITH(json::from_msgpack(vec1),
+                          "[json.exception.parse_error.110] parse error at 2: cannot read 1 bytes from vector");
 
         // more test cases for MessagePack
-        for (uint8_t b :
+        for (auto b :
                 {
                     0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f, // fixmap
                     0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f, // fixarray
@@ -586,12 +682,12 @@ TEST_CASE("regression tests")
                     0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf
                 })
         {
-            std::vector<uint8_t> vec(1, b);
-            CHECK_THROWS_AS(json::from_msgpack(vec), std::out_of_range);
+            std::vector<uint8_t> vec(1, static_cast<uint8_t>(b));
+            CHECK_THROWS_AS(json::from_msgpack(vec), json::parse_error);
         }
 
         // more test cases for CBOR
-        for (uint8_t b :
+        for (auto b :
                 {
                     0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f,
                     0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, // UTF-8 string
@@ -601,13 +697,280 @@ TEST_CASE("regression tests")
                     0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7 // map
                 })
         {
-            std::vector<uint8_t> vec(1, b);
-            CHECK_THROWS_AS(json::from_cbor(vec), std::out_of_range);
+            std::vector<uint8_t> vec(1, static_cast<uint8_t>(b));
+            CHECK_THROWS_AS(json::from_cbor(vec), json::parse_error);
         }
 
         // special case: empty input
         std::vector<uint8_t> vec2;
-        CHECK_THROWS_AS(json::from_cbor(vec2), std::out_of_range);
-        CHECK_THROWS_AS(json::from_msgpack(vec2), std::out_of_range);
+        CHECK_THROWS_AS(json::from_cbor(vec2), json::parse_error);
+        CHECK_THROWS_WITH(json::from_cbor(vec2),
+                          "[json.exception.parse_error.110] parse error at 1: cannot read 1 bytes from vector");
+        CHECK_THROWS_AS(json::from_msgpack(vec2), json::parse_error);
+        CHECK_THROWS_WITH(json::from_msgpack(vec2),
+                          "[json.exception.parse_error.110] parse error at 1: cannot read 1 bytes from vector");
+    }
+
+    SECTION("issue #411 - Heap-buffer-overflow (OSS-Fuzz issue 366)")
+    {
+        // original test case: empty UTF-8 string (indefinite length)
+        std::vector<uint8_t> vec1 {0x7f};
+        CHECK_THROWS_AS(json::from_cbor(vec1), json::parse_error);
+        CHECK_THROWS_WITH(json::from_cbor(vec1),
+                          "[json.exception.parse_error.110] parse error at 2: cannot read 1 bytes from vector");
+
+        // related test case: empty array (indefinite length)
+        std::vector<uint8_t> vec2 {0x9f};
+        CHECK_THROWS_AS(json::from_cbor(vec2), json::parse_error);
+        CHECK_THROWS_WITH(json::from_cbor(vec2),
+                          "[json.exception.parse_error.110] parse error at 2: cannot read 1 bytes from vector");
+
+        // related test case: empty map (indefinite length)
+        std::vector<uint8_t> vec3 {0xbf};
+        CHECK_THROWS_AS(json::from_cbor(vec3), json::parse_error);
+        CHECK_THROWS_WITH(json::from_cbor(vec3),
+                          "[json.exception.parse_error.110] parse error at 2: cannot read 1 bytes from vector");
+    }
+
+    SECTION("issue #412 - Heap-buffer-overflow (OSS-Fuzz issue 367)")
+    {
+        // original test case
+        std::vector<uint8_t> vec
+        {
+            0xab, 0x98, 0x98, 0x98, 0x98, 0x98, 0x98, 0x98,
+            0x98, 0x98, 0x98, 0x98, 0x98, 0x00, 0x00, 0x00,
+            0x60, 0xab, 0x98, 0x98, 0x98, 0x98, 0x98, 0x98,
+            0x98, 0x98, 0x98, 0x98, 0x98, 0x00, 0x00, 0x00,
+            0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60,
+            0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60,
+            0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60,
+            0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60,
+            0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60,
+            0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60,
+            0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0xa0, 0x9f,
+            0x9f, 0x97, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60,
+            0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60,
+            0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60,
+            0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60,
+            0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60,
+            0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60
+        };
+        CHECK_THROWS_AS(json::from_cbor(vec), json::parse_error);
+        CHECK_THROWS_WITH(json::from_cbor(vec),
+                          "[json.exception.parse_error.113] parse error at 2: expected a CBOR string; last byte: 0x98");
+
+        // related test case: nonempty UTF-8 string (indefinite length)
+        std::vector<uint8_t> vec1 {0x7f, 0x61, 0x61};
+        CHECK_THROWS_AS(json::from_cbor(vec1), json::parse_error);
+        CHECK_THROWS_WITH(json::from_cbor(vec1),
+                          "[json.exception.parse_error.110] parse error at 4: cannot read 1 bytes from vector");
+
+        // related test case: nonempty array (indefinite length)
+        std::vector<uint8_t> vec2 {0x9f, 0x01};
+        CHECK_THROWS_AS(json::from_cbor(vec2), json::parse_error);
+        CHECK_THROWS_WITH(json::from_cbor(vec2),
+                          "[json.exception.parse_error.110] parse error at 3: cannot read 1 bytes from vector");
+
+        // related test case: nonempty map (indefinite length)
+        std::vector<uint8_t> vec3 {0xbf, 0x61, 0x61, 0x01};
+        CHECK_THROWS_AS(json::from_cbor(vec3), json::parse_error);
+        CHECK_THROWS_WITH(json::from_cbor(vec3),
+                          "[json.exception.parse_error.110] parse error at 5: cannot read 1 bytes from vector");
+    }
+
+    SECTION("issue #414 - compare with literal 0)")
+    {
+#define CHECK_TYPE(v) \
+    CHECK((json(v) == v));\
+    CHECK((v == json(v)));\
+    CHECK_FALSE((json(v) != v));\
+    CHECK_FALSE((v != json(v)));
+
+        CHECK_TYPE(nullptr);
+        CHECK_TYPE(0);
+        CHECK_TYPE(0u);
+        CHECK_TYPE(0L);
+        CHECK_TYPE(0.0);
+        CHECK_TYPE("");
+
+#undef CHECK_TYPE
+    }
+
+    SECTION("issue #416 - Use-of-uninitialized-value (OSS-Fuzz issue 377)")
+    {
+        // original test case
+        std::vector<uint8_t> vec1
+        {
+            0x94, 0xfa, 0xfa, 0xfa, 0xfa, 0xfa, 0xfa, 0xfa,
+            0x3a, 0x96, 0x96, 0xb4, 0xb4, 0xb4, 0xb4, 0xb4,
+            0xb4, 0xb4, 0xb4, 0xb4, 0xb4, 0xb4, 0xb4, 0x71,
+            0xb4, 0xb4, 0xfa, 0xfa, 0xfa, 0xfa, 0xfa, 0x3a,
+            0x96, 0x96, 0xb4, 0xb4, 0xfa, 0x94, 0x94, 0x61,
+            0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0xfa
+        };
+        CHECK_THROWS_AS(json::from_cbor(vec1), json::parse_error);
+        CHECK_THROWS_WITH(json::from_cbor(vec1),
+                          "[json.exception.parse_error.113] parse error at 13: expected a CBOR string; last byte: 0xb4");
+
+        // related test case: double-precision
+        std::vector<uint8_t> vec2
+        {
+            0x94, 0xfa, 0xfa, 0xfa, 0xfa, 0xfa, 0xfa, 0xfa,
+            0x3a, 0x96, 0x96, 0xb4, 0xb4, 0xb4, 0xb4, 0xb4,
+            0xb4, 0xb4, 0xb4, 0xb4, 0xb4, 0xb4, 0xb4, 0x71,
+            0xb4, 0xb4, 0xfa, 0xfa, 0xfa, 0xfa, 0xfa, 0x3a,
+            0x96, 0x96, 0xb4, 0xb4, 0xfa, 0x94, 0x94, 0x61,
+            0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0xfb
+        };
+        CHECK_THROWS_AS(json::from_cbor(vec2), json::parse_error);
+        CHECK_THROWS_WITH(json::from_cbor(vec2),
+                          "[json.exception.parse_error.113] parse error at 13: expected a CBOR string; last byte: 0xb4");
+    }
+
+    SECTION("issue #452 - Heap-buffer-overflow (OSS-Fuzz issue 585)")
+    {
+        std::vector<uint8_t> vec = {'-', '0', '1', '2', '2', '7', '4'};
+        CHECK_THROWS_AS(json::parse(vec), json::parse_error);
+    }
+
+    SECTION("issue #454 - doubles are printed as integers")
+    {
+        json j = R"({"bool_value":true,"double_value":2.0,"int_value":10,"level1":{"list_value":[3,"hi",false],"tmp":5.0},"string_value":"hello"})"_json;
+        CHECK(j["double_value"].is_number_float());
+    }
+
+    SECTION("issue #464 - VS2017 implicit to std::string conversion fix")
+    {
+        json v = "test";
+        std::string test;
+        test = v;
+        CHECK(v == "test");
+    }
+
+    SECTION("issue #465 - roundtrip error while parsing 1000000000000000010E5")
+    {
+        json j1 = json::parse("1000000000000000010E5");
+        std::string s1 = j1.dump();
+        json j2 = json::parse(s1);
+        std::string s2 = j2.dump();
+        CHECK(s1 == s2);
+    }
+
+    SECTION("issue #473 - inconsistent behavior in conversion to array type")
+    {
+        json j_array = {1, 2, 3, 4};
+        json j_number = 42;
+        json j_null = nullptr;
+
+        SECTION("std::vector")
+        {
+            auto create = [](const json & j)
+            {
+                std::vector<int> v = j;
+            };
+
+            CHECK_NOTHROW(create(j_array));
+            CHECK_THROWS_AS(create(j_number), json::type_error);
+            CHECK_THROWS_WITH(create(j_number), "[json.exception.type_error.302] type must be array, but is number");
+            CHECK_THROWS_AS(create(j_null), json::type_error);
+            CHECK_THROWS_WITH(create(j_null), "[json.exception.type_error.302] type must be array, but is null");
+        }
+
+        SECTION("std::list")
+        {
+            auto create = [](const json & j)
+            {
+                std::list<int> v = j;
+            };
+
+            CHECK_NOTHROW(create(j_array));
+            CHECK_THROWS_AS(create(j_number), json::type_error);
+            CHECK_THROWS_WITH(create(j_number), "[json.exception.type_error.302] type must be array, but is number");
+            CHECK_THROWS_AS(create(j_null), json::type_error);
+            CHECK_THROWS_WITH(create(j_null), "[json.exception.type_error.302] type must be array, but is null");
+        }
+
+        SECTION("std::forward_list")
+        {
+            auto create = [](const json & j)
+            {
+                std::forward_list<int> v = j;
+            };
+
+            CHECK_NOTHROW(create(j_array));
+            CHECK_THROWS_AS(create(j_number), json::type_error);
+            CHECK_THROWS_WITH(create(j_number), "[json.exception.type_error.302] type must be array, but is number");
+            CHECK_THROWS_AS(create(j_null), json::type_error);
+            CHECK_THROWS_WITH(create(j_null), "[json.exception.type_error.302] type must be array, but is null");
+        }
+    }
+
+    SECTION("issue #486 - json::value_t can't be a map's key type in VC++ 2015")
+    {
+        // the code below must compile with MSVC
+        std::map<json::value_t, std::string> jsonTypes ;
+        jsonTypes[json::value_t::array] = "array";
+    }
+
+    SECTION("issue #494 - conversion from vector<bool> to json fails to build")
+    {
+        std::vector<bool> boolVector = {false, true, false, false};
+        json j;
+        j["bool_vector"] = boolVector;
+
+        CHECK(j["bool_vector"].dump() == "[false,true,false,false]");
+    }
+
+    SECTION("issue #495 - fill_line_buffer incorrectly tests m_stream for eof but not fail or bad bits")
+    {
+        SECTION("setting failbit")
+        {
+            std::stringstream ss;
+            ss << "[1,2,3\n,4,5]";
+
+            json::lexer l(ss);
+
+            CHECK(l.m_line_buffer == "[1,2,3\n");
+
+            l.m_stream->setstate(std::ios_base::failbit);
+
+            CHECK_THROWS_AS(l.fill_line_buffer(), json::parse_error);
+            CHECK_THROWS_WITH(l.fill_line_buffer(), "[json.exception.parse_error.111] parse error: bad input stream");
+        }
+
+        SECTION("setting badbit")
+        {
+            std::stringstream ss;
+            ss << "[1,2,3\n,4,5]";
+
+            json::lexer l(ss);
+
+            CHECK(l.m_line_buffer == "[1,2,3\n");
+
+            l.m_stream->setstate(std::ios_base::badbit);
+
+            CHECK_THROWS_AS(l.fill_line_buffer(), json::parse_error);
+            CHECK_THROWS_WITH(l.fill_line_buffer(), "[json.exception.parse_error.111] parse error: bad input stream");
+        }
+    }
+
+    SECTION("issue #504 - assertion error (OSS-Fuzz 856)")
+    {
+        std::vector<uint8_t> vec1 = {0xf9, 0xff, 0xff, 0x4a, 0x3a, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x37, 0x02, 0x38};
+        json j1 = json::from_cbor(vec1);
+
+        // step 2: round trip
+        std::vector<uint8_t> vec2 = json::to_cbor(j1);
+
+        // parse serialization
+        json j2 = json::from_cbor(vec2);
+
+        // NaN is dumped to "null"
+        CHECK(j2.is_number_float());
+        CHECK(std::isnan(j2.get<json::number_float_t>()));
+        CHECK(j2.dump() == "null");
+
+        // check if serializations match
+        CHECK(json::to_cbor(j2) == vec2);
     }
 }
