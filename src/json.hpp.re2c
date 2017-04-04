@@ -1,11 +1,11 @@
 /*
     __ _____ _____ _____
  __|  |   __|     |   | |  JSON for Modern C++
-|  |  |__   |  |  | | | |  version 2.0.9
+|  |  |__   |  |  | | | |  version 2.0.10
 |_____|_____|_____|_|___|  https://github.com/nlohmann/json
 
 Licensed under the MIT License <http://opensource.org/licenses/MIT>.
-Copyright (c) 2013-2016 Niels Lohmann <http://nlohmann.me>.
+Copyright (c) 2013-2017 Niels Lohmann <http://nlohmann.me>.
 
 Permission is hereby  granted, free of charge, to any  person obtaining a copy
 of this software and associated  documentation files (the "Software"), to deal
@@ -58,13 +58,11 @@ SOFTWARE.
 
 // exclude unsupported compilers
 #if defined(__clang__)
-    #define CLANG_VERSION (__clang_major__ * 10000 + __clang_minor__ * 100 + __clang_patchlevel__)
-    #if CLANG_VERSION < 30400
+    #if (__clang_major__ * 10000 + __clang_minor__ * 100 + __clang_patchlevel__) < 30400
         #error "unsupported Clang version - see https://github.com/nlohmann/json#supported-compilers"
     #endif
 #elif defined(__GNUC__)
-    #define GCC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
-    #if GCC_VERSION < 40900
+    #if (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__) < 40900
         #error "unsupported GCC version - see https://github.com/nlohmann/json#supported-compilers"
     #endif
 #endif
@@ -88,6 +86,17 @@ SOFTWARE.
     #define JSON_DEPRECATED __declspec(deprecated)
 #else
     #define JSON_DEPRECATED
+#endif
+
+// allow to disable exceptions
+#if not defined(JSON_NOEXCEPTION) || defined(__EXCEPTIONS)
+    #define JSON_THROW(exception) throw exception
+    #define JSON_TRY try
+    #define JSON_CATCH(exception) catch(exception)
+#else
+    #define JSON_THROW(exception) std::abort()
+    #define JSON_TRY if(true)
+    #define JSON_CATCH(exception) if(false)
 #endif
 
 /*!
@@ -128,7 +137,7 @@ struct has_mapped_type
         std::is_integral<decltype(detect(std::declval<T>()))>::value;
 };
 
-}
+} // namespace
 
 /*!
 @brief a class to store JSON values
@@ -153,7 +162,8 @@ default)
 @requirement The class satisfies the following concept requirements:
 - Basic
  - [DefaultConstructible](http://en.cppreference.com/w/cpp/concept/DefaultConstructible):
-   JSON values can be default constructed. The result will be a JSON null value.
+   JSON values can be default constructed. The result will be a JSON null
+   value.
  - [MoveConstructible](http://en.cppreference.com/w/cpp/concept/MoveConstructible):
    A JSON value can be constructed from an rvalue argument.
  - [CopyConstructible](http://en.cppreference.com/w/cpp/concept/CopyConstructible):
@@ -168,8 +178,8 @@ default)
  - [StandardLayoutType](http://en.cppreference.com/w/cpp/concept/StandardLayoutType):
    JSON values have
    [standard layout](http://en.cppreference.com/w/cpp/language/data_members#Standard_layout):
-   All non-static data members are private and standard layout types, the class
-   has no virtual functions or (virtual) base classes.
+   All non-static data members are private and standard layout types, the
+   class has no virtual functions or (virtual) base classes.
 - Library-wide
  - [EqualityComparable](http://en.cppreference.com/w/cpp/concept/EqualityComparable):
    JSON values can be compared with `==`, see @ref
@@ -280,6 +290,64 @@ class basic_json
     static allocator_type get_allocator()
     {
         return allocator_type();
+    }
+
+    /*!
+    @brief returns version information on the library
+    */
+    static basic_json meta()
+    {
+        basic_json result;
+
+        result["copyright"] = "(C) 2013-2017 Niels Lohmann";
+        result["name"] = "JSON for Modern C++";
+        result["url"] = "https://github.com/nlohmann/json";
+        result["version"] =
+        {
+            {"string", "2.0.10"},
+            {"major", 2},
+            {"minor", 0},
+            {"patch", 10},
+        };
+
+#ifdef _WIN32
+        result["platform"] = "win32";
+#elif defined __linux__
+        result["platform"] = "linux";
+#elif defined __APPLE__
+        result["platform"] = "apple";
+#elif defined __unix__
+        result["platform"] = "unix";
+#else
+        result["platform"] = "unknown";
+#endif
+
+#if defined(__clang__)
+        result["compiler"] = {{"family", "clang"}, {"version", __clang_version__}};
+#elif defined(__ICC) || defined(__INTEL_COMPILER)
+        result["compiler"] = {{"family", "icc"}, {"version", __INTEL_COMPILER}};
+#elif defined(__GNUC__) || defined(__GNUG__)
+        result["compiler"] = {{"family", "gcc"}, {"version", std::to_string(__GNUC__) + "." + std::to_string(__GNUC_MINOR__) + "." + std::to_string(__GNUC_PATCHLEVEL__)}};
+#elif defined(__HP_cc) || defined(__HP_aCC)
+        result["compiler"] = "hp"
+#elif defined(__IBMCPP__)
+        result["compiler"] = {{"family", "ilecpp"}, {"version", __IBMCPP__}};
+#elif defined(_MSC_VER)
+        result["compiler"] = {{"family", "msvc"}, {"version", _MSC_VER}};
+#elif defined(__PGI)
+        result["compiler"] = {{"family", "pgcpp"}, {"version", __PGI}};
+#elif defined(__SUNPRO_CC)
+        result["compiler"] = {{"family", "sunpro"}, {"version", __SUNPRO_CC}};
+#else
+        result["compiler"] = {{"family", "unknown"}, {"version", "unknown"}};
+#endif
+
+#ifdef __cplusplus
+        result["compiler"]["c++"] = std::to_string(__cplusplus);
+#else
+        result["compiler"]["c++"] = "unknown";
+#endif
+        return result;
     }
 
 
@@ -448,6 +516,12 @@ class basic_json
     @code {.cpp}
     std::string
     @endcode
+
+    #### Encoding
+
+    Strings are stored in UTF-8 encoding. Therefore, functions like
+    `std::string::size()` or `std::string::length()` return the number of
+    bytes in the string rather than the number of characters or glyphs.
 
     #### String comparison
 
@@ -767,7 +841,7 @@ class basic_json
         };
         std::unique_ptr<T, decltype(deleter)> object(alloc.allocate(1), deleter);
         alloc.construct(object.get(), std::forward<Args>(args)...);
-        assert(object.get() != nullptr);
+        assert(object != nullptr);
         return object.release();
     }
 
@@ -873,8 +947,17 @@ class basic_json
                     break;
                 }
 
+                case value_t::null:
+                {
+                    break;
+                }
+
                 default:
                 {
+                    if (t == value_t::null)
+                    {
+                        JSON_THROW(std::domain_error("961c151d2e87f2686a955a9be24d316f1362bf21 2.0.10")); // LCOV_EXCL_LINE
+                    }
                     break;
                 }
             }
@@ -1645,7 +1728,7 @@ class basic_json
             // if object is wanted but impossible, throw an exception
             if (manual_type == value_t::object and not is_an_object)
             {
-                throw std::domain_error("cannot create object from initializer list");
+                JSON_THROW(std::domain_error("cannot create object from initializer list"));
             }
         }
 
@@ -1823,7 +1906,7 @@ class basic_json
         // make sure iterator fits the current value
         if (first.m_object != last.m_object)
         {
-            throw std::domain_error("iterators are not compatible");
+            JSON_THROW(std::domain_error("iterators are not compatible"));
         }
 
         // copy type from first iterator
@@ -1840,7 +1923,7 @@ class basic_json
             {
                 if (not first.m_it.primitive_iterator.is_begin() or not last.m_it.primitive_iterator.is_end())
                 {
-                    throw std::out_of_range("iterators out of range");
+                    JSON_THROW(std::out_of_range("iterators out of range"));
                 }
                 break;
             }
@@ -1885,19 +1968,21 @@ class basic_json
 
             case value_t::object:
             {
-                m_value.object = create<object_t>(first.m_it.object_iterator, last.m_it.object_iterator);
+                m_value.object = create<object_t>(first.m_it.object_iterator,
+                                                  last.m_it.object_iterator);
                 break;
             }
 
             case value_t::array:
             {
-                m_value.array = create<array_t>(first.m_it.array_iterator, last.m_it.array_iterator);
+                m_value.array = create<array_t>(first.m_it.array_iterator,
+                                                last.m_it.array_iterator);
                 break;
             }
 
             default:
             {
-                throw std::domain_error("cannot use construct with iterators from " + first.m_object->type_name());
+                JSON_THROW(std::domain_error("cannot use construct with iterators from " + first.m_object->type_name()));
             }
         }
 
@@ -2574,29 +2659,25 @@ class basic_json
     template<class T, typename std::enable_if<
                  std::is_convertible<typename object_t::key_type, typename T::key_type>::value and
                  std::is_convertible<basic_json_t, typename T::mapped_type>::value, int>::type = 0>
-    T get_impl(T*) const
+    T get_impl(T* /*unused*/) const
     {
         if (is_object())
         {
             return T(m_value.object->begin(), m_value.object->end());
         }
-        else
-        {
-            throw std::domain_error("type must be object, but is " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("type must be object, but is " + type_name()));
     }
 
     /// get an object (explicit)
-    object_t get_impl(object_t*) const
+    object_t get_impl(object_t* /*unused*/) const
     {
         if (is_object())
         {
             return *(m_value.object);
         }
-        else
-        {
-            throw std::domain_error("type must be object, but is " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("type must be object, but is " + type_name()));
     }
 
     /// get an array (explicit)
@@ -2606,7 +2687,7 @@ class basic_json
                  not std::is_arithmetic<T>::value and
                  not std::is_convertible<std::string, T>::value and
                  not has_mapped_type<T>::value, int>::type = 0>
-    T get_impl(T*) const
+    T get_impl(T* /*unused*/) const
     {
         if (is_array())
         {
@@ -2618,17 +2699,15 @@ class basic_json
             });
             return to_vector;
         }
-        else
-        {
-            throw std::domain_error("type must be array, but is " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("type must be array, but is " + type_name()));
     }
 
     /// get an array (explicit)
     template<class T, typename std::enable_if<
                  std::is_convertible<basic_json_t, T>::value and
                  not std::is_same<basic_json_t, T>::value, int>::type = 0>
-    std::vector<T> get_impl(std::vector<T>*) const
+    std::vector<T> get_impl(std::vector<T>* /*unused*/) const
     {
         if (is_array())
         {
@@ -2641,60 +2720,52 @@ class basic_json
             });
             return to_vector;
         }
-        else
-        {
-            throw std::domain_error("type must be array, but is " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("type must be array, but is " + type_name()));
     }
 
     /// get an array (explicit)
     template<class T, typename std::enable_if<
                  std::is_same<basic_json, typename T::value_type>::value and
                  not has_mapped_type<T>::value, int>::type = 0>
-    T get_impl(T*) const
+    T get_impl(T* /*unused*/) const
     {
         if (is_array())
         {
             return T(m_value.array->begin(), m_value.array->end());
         }
-        else
-        {
-            throw std::domain_error("type must be array, but is " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("type must be array, but is " + type_name()));
     }
 
     /// get an array (explicit)
-    array_t get_impl(array_t*) const
+    array_t get_impl(array_t* /*unused*/) const
     {
         if (is_array())
         {
             return *(m_value.array);
         }
-        else
-        {
-            throw std::domain_error("type must be array, but is " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("type must be array, but is " + type_name()));
     }
 
     /// get a string (explicit)
     template<typename T, typename std::enable_if<
                  std::is_convertible<string_t, T>::value, int>::type = 0>
-    T get_impl(T*) const
+    T get_impl(T* /*unused*/) const
     {
         if (is_string())
         {
             return *m_value.string;
         }
-        else
-        {
-            throw std::domain_error("type must be string, but is " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("type must be string, but is " + type_name()));
     }
 
     /// get a number (explicit)
     template<typename T, typename std::enable_if<
                  std::is_arithmetic<T>::value, int>::type = 0>
-    T get_impl(T*) const
+    T get_impl(T* /*unused*/) const
     {
         switch (m_type)
         {
@@ -2715,99 +2786,104 @@ class basic_json
 
             default:
             {
-                throw std::domain_error("type must be number, but is " + type_name());
+                JSON_THROW(std::domain_error("type must be number, but is " + type_name()));
             }
         }
     }
 
     /// get a boolean (explicit)
-    constexpr boolean_t get_impl(boolean_t*) const
+    boolean_t get_impl(boolean_t* /*unused*/) const
     {
-        return is_boolean()
-               ? m_value.boolean
-               : throw std::domain_error("type must be boolean, but is " + type_name());
+        if (is_boolean())
+        {
+            return m_value.boolean;
+        }
+        else
+        {
+            JSON_THROW(std::domain_error("type must be boolean, but is " + type_name()));
+        }
     }
 
     /// get a pointer to the value (object)
-    object_t* get_impl_ptr(object_t*) noexcept
+    object_t* get_impl_ptr(object_t* /*unused*/) noexcept
     {
         return is_object() ? m_value.object : nullptr;
     }
 
     /// get a pointer to the value (object)
-    constexpr const object_t* get_impl_ptr(const object_t*) const noexcept
+    constexpr const object_t* get_impl_ptr(const object_t* /*unused*/) const noexcept
     {
         return is_object() ? m_value.object : nullptr;
     }
 
     /// get a pointer to the value (array)
-    array_t* get_impl_ptr(array_t*) noexcept
+    array_t* get_impl_ptr(array_t* /*unused*/) noexcept
     {
         return is_array() ? m_value.array : nullptr;
     }
 
     /// get a pointer to the value (array)
-    constexpr const array_t* get_impl_ptr(const array_t*) const noexcept
+    constexpr const array_t* get_impl_ptr(const array_t* /*unused*/) const noexcept
     {
         return is_array() ? m_value.array : nullptr;
     }
 
     /// get a pointer to the value (string)
-    string_t* get_impl_ptr(string_t*) noexcept
+    string_t* get_impl_ptr(string_t* /*unused*/) noexcept
     {
         return is_string() ? m_value.string : nullptr;
     }
 
     /// get a pointer to the value (string)
-    constexpr const string_t* get_impl_ptr(const string_t*) const noexcept
+    constexpr const string_t* get_impl_ptr(const string_t* /*unused*/) const noexcept
     {
         return is_string() ? m_value.string : nullptr;
     }
 
     /// get a pointer to the value (boolean)
-    boolean_t* get_impl_ptr(boolean_t*) noexcept
+    boolean_t* get_impl_ptr(boolean_t* /*unused*/) noexcept
     {
         return is_boolean() ? &m_value.boolean : nullptr;
     }
 
     /// get a pointer to the value (boolean)
-    constexpr const boolean_t* get_impl_ptr(const boolean_t*) const noexcept
+    constexpr const boolean_t* get_impl_ptr(const boolean_t* /*unused*/) const noexcept
     {
         return is_boolean() ? &m_value.boolean : nullptr;
     }
 
     /// get a pointer to the value (integer number)
-    number_integer_t* get_impl_ptr(number_integer_t*) noexcept
+    number_integer_t* get_impl_ptr(number_integer_t* /*unused*/) noexcept
     {
         return is_number_integer() ? &m_value.number_integer : nullptr;
     }
 
     /// get a pointer to the value (integer number)
-    constexpr const number_integer_t* get_impl_ptr(const number_integer_t*) const noexcept
+    constexpr const number_integer_t* get_impl_ptr(const number_integer_t* /*unused*/) const noexcept
     {
         return is_number_integer() ? &m_value.number_integer : nullptr;
     }
 
     /// get a pointer to the value (unsigned number)
-    number_unsigned_t* get_impl_ptr(number_unsigned_t*) noexcept
+    number_unsigned_t* get_impl_ptr(number_unsigned_t* /*unused*/) noexcept
     {
         return is_number_unsigned() ? &m_value.number_unsigned : nullptr;
     }
 
     /// get a pointer to the value (unsigned number)
-    constexpr const number_unsigned_t* get_impl_ptr(const number_unsigned_t*) const noexcept
+    constexpr const number_unsigned_t* get_impl_ptr(const number_unsigned_t* /*unused*/) const noexcept
     {
         return is_number_unsigned() ? &m_value.number_unsigned : nullptr;
     }
 
     /// get a pointer to the value (floating-point number)
-    number_float_t* get_impl_ptr(number_float_t*) noexcept
+    number_float_t* get_impl_ptr(number_float_t* /*unused*/) noexcept
     {
         return is_number_float() ? &m_value.number_float : nullptr;
     }
 
     /// get a pointer to the value (floating-point number)
-    constexpr const number_float_t* get_impl_ptr(const number_float_t*) const noexcept
+    constexpr const number_float_t* get_impl_ptr(const number_float_t* /*unused*/) const noexcept
     {
         return is_number_float() ? &m_value.number_float : nullptr;
     }
@@ -2836,11 +2912,9 @@ class basic_json
         {
             return *ptr;
         }
-        else
-        {
-            throw std::domain_error("incompatible ReferenceType for get_ref, actual type is " +
-                                    obj.type_name());
-        }
+
+        throw std::domain_error("incompatible ReferenceType for get_ref, actual type is " +
+                                obj.type_name());
     }
 
   public:
@@ -3091,7 +3165,7 @@ class basic_json
     template < typename ValueType, typename std::enable_if <
                    not std::is_pointer<ValueType>::value and
                    not std::is_same<ValueType, typename string_t::value_type>::value
-#ifndef _MSC_VER  // Fix for issue #167 operator<< abiguity under VS2015
+#ifndef _MSC_VER  // fix for issue #167 operator<< abiguity under VS2015
                    and not std::is_same<ValueType, std::initializer_list<typename string_t::value_type>>::value
 #endif
                    , int >::type = 0 >
@@ -3139,19 +3213,19 @@ class basic_json
         // at only works for arrays
         if (is_array())
         {
-            try
+            JSON_TRY
             {
                 return m_value.array->at(idx);
             }
-            catch (std::out_of_range&)
+            JSON_CATCH (std::out_of_range&)
             {
                 // create better exception explanation
-                throw std::out_of_range("array index " + std::to_string(idx) + " is out of range");
+                JSON_THROW(std::out_of_range("array index " + std::to_string(idx) + " is out of range"));
             }
         }
         else
         {
-            throw std::domain_error("cannot use at() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use at() with " + type_name()));
         }
     }
 
@@ -3182,19 +3256,19 @@ class basic_json
         // at only works for arrays
         if (is_array())
         {
-            try
+            JSON_TRY
             {
                 return m_value.array->at(idx);
             }
-            catch (std::out_of_range&)
+            JSON_CATCH (std::out_of_range&)
             {
                 // create better exception explanation
-                throw std::out_of_range("array index " + std::to_string(idx) + " is out of range");
+                JSON_THROW(std::out_of_range("array index " + std::to_string(idx) + " is out of range"));
             }
         }
         else
         {
-            throw std::domain_error("cannot use at() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use at() with " + type_name()));
         }
     }
 
@@ -3229,19 +3303,19 @@ class basic_json
         // at only works for objects
         if (is_object())
         {
-            try
+            JSON_TRY
             {
                 return m_value.object->at(key);
             }
-            catch (std::out_of_range&)
+            JSON_CATCH (std::out_of_range&)
             {
                 // create better exception explanation
-                throw std::out_of_range("key '" + key + "' not found");
+                JSON_THROW(std::out_of_range("key '" + key + "' not found"));
             }
         }
         else
         {
-            throw std::domain_error("cannot use at() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use at() with " + type_name()));
         }
     }
 
@@ -3276,19 +3350,19 @@ class basic_json
         // at only works for objects
         if (is_object())
         {
-            try
+            JSON_TRY
             {
                 return m_value.object->at(key);
             }
-            catch (std::out_of_range&)
+            JSON_CATCH (std::out_of_range&)
             {
                 // create better exception explanation
-                throw std::out_of_range("key '" + key + "' not found");
+                JSON_THROW(std::out_of_range("key '" + key + "' not found"));
             }
         }
         else
         {
-            throw std::domain_error("cannot use at() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use at() with " + type_name()));
         }
     }
 
@@ -3340,10 +3414,8 @@ class basic_json
 
             return m_value.array->operator[](idx);
         }
-        else
-        {
-            throw std::domain_error("cannot use operator[] with " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("cannot use operator[] with " + type_name()));
     }
 
     /*!
@@ -3372,10 +3444,8 @@ class basic_json
         {
             return m_value.array->operator[](idx);
         }
-        else
-        {
-            throw std::domain_error("cannot use operator[] with " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("cannot use operator[] with " + type_name()));
     }
 
     /*!
@@ -3420,10 +3490,8 @@ class basic_json
         {
             return m_value.object->operator[](key);
         }
-        else
-        {
-            throw std::domain_error("cannot use operator[] with " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("cannot use operator[] with " + type_name()));
     }
 
     /*!
@@ -3464,10 +3532,8 @@ class basic_json
             assert(m_value.object->find(key) != m_value.object->end());
             return m_value.object->find(key)->second;
         }
-        else
-        {
-            throw std::domain_error("cannot use operator[] with " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("cannot use operator[] with " + type_name()));
     }
 
     /*!
@@ -3581,10 +3647,8 @@ class basic_json
         {
             return m_value.object->operator[](key);
         }
-        else
-        {
-            throw std::domain_error("cannot use operator[] with " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("cannot use operator[] with " + type_name()));
     }
 
     /*!
@@ -3626,10 +3690,8 @@ class basic_json
             assert(m_value.object->find(key) != m_value.object->end());
             return m_value.object->find(key)->second;
         }
-        else
-        {
-            throw std::domain_error("cannot use operator[] with " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("cannot use operator[] with " + type_name()));
     }
 
     /*!
@@ -3693,14 +3755,12 @@ class basic_json
             {
                 return *it;
             }
-            else
-            {
-                return default_value;
-            }
+
+            return default_value;
         }
         else
         {
-            throw std::domain_error("cannot use value() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use value() with " + type_name()));
         }
     }
 
@@ -3762,19 +3822,17 @@ class basic_json
         if (is_object())
         {
             // if pointer resolves a value, return it or use default value
-            try
+            JSON_TRY
             {
                 return ptr.get_checked(this);
             }
-            catch (std::out_of_range&)
+            JSON_CATCH (std::out_of_range&)
             {
                 return default_value;
             }
         }
-        else
-        {
-            throw std::domain_error("cannot use value() with " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("cannot use value() with " + type_name()));
     }
 
     /*!
@@ -3925,7 +3983,7 @@ class basic_json
         // make sure iterator fits the current value
         if (this != pos.m_object)
         {
-            throw std::domain_error("iterator does not fit current value");
+            JSON_THROW(std::domain_error("iterator does not fit current value"));
         }
 
         IteratorType result = end();
@@ -3940,7 +3998,7 @@ class basic_json
             {
                 if (not pos.m_it.primitive_iterator.is_begin())
                 {
-                    throw std::out_of_range("iterator out of range");
+                    JSON_THROW(std::out_of_range("iterator out of range"));
                 }
 
                 if (is_string())
@@ -3970,7 +4028,7 @@ class basic_json
 
             default:
             {
-                throw std::domain_error("cannot use erase() with " + type_name());
+                JSON_THROW(std::domain_error("cannot use erase() with " + type_name()));
             }
         }
 
@@ -4032,7 +4090,7 @@ class basic_json
         // make sure iterator fits the current value
         if (this != first.m_object or this != last.m_object)
         {
-            throw std::domain_error("iterators do not fit current value");
+            JSON_THROW(std::domain_error("iterators do not fit current value"));
         }
 
         IteratorType result = end();
@@ -4047,7 +4105,7 @@ class basic_json
             {
                 if (not first.m_it.primitive_iterator.is_begin() or not last.m_it.primitive_iterator.is_end())
                 {
-                    throw std::out_of_range("iterators out of range");
+                    JSON_THROW(std::out_of_range("iterators out of range"));
                 }
 
                 if (is_string())
@@ -4079,7 +4137,7 @@ class basic_json
 
             default:
             {
-                throw std::domain_error("cannot use erase() with " + type_name());
+                JSON_THROW(std::domain_error("cannot use erase() with " + type_name()));
             }
         }
 
@@ -4122,10 +4180,8 @@ class basic_json
         {
             return m_value.object->erase(key);
         }
-        else
-        {
-            throw std::domain_error("cannot use erase() with " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("cannot use erase() with " + type_name()));
     }
 
     /*!
@@ -4159,14 +4215,14 @@ class basic_json
         {
             if (idx >= size())
             {
-                throw std::out_of_range("array index " + std::to_string(idx) + " is out of range");
+                JSON_THROW(std::out_of_range("array index " + std::to_string(idx) + " is out of range"));
             }
 
             m_value.array->erase(m_value.array->begin() + static_cast<difference_type>(idx));
         }
         else
         {
-            throw std::domain_error("cannot use erase() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use erase() with " + type_name()));
         }
     }
 
@@ -4884,7 +4940,7 @@ class basic_json
         // push_back only works for null objects or arrays
         if (not(is_null() or is_array()))
         {
-            throw std::domain_error("cannot use push_back() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use push_back() with " + type_name()));
         }
 
         // transform null object into an array
@@ -4920,7 +4976,7 @@ class basic_json
         // push_back only works for null objects or arrays
         if (not(is_null() or is_array()))
         {
-            throw std::domain_error("cannot use push_back() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use push_back() with " + type_name()));
         }
 
         // transform null object into an array
@@ -4970,7 +5026,7 @@ class basic_json
         // push_back only works for null objects or objects
         if (not(is_null() or is_object()))
         {
-            throw std::domain_error("cannot use push_back() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use push_back() with " + type_name()));
         }
 
         // transform null object into an object
@@ -5070,7 +5126,7 @@ class basic_json
         // emplace_back only works for null objects or arrays
         if (not(is_null() or is_array()))
         {
-            throw std::domain_error("cannot use emplace_back() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use emplace_back() with " + type_name()));
         }
 
         // transform null object into an array
@@ -5088,8 +5144,8 @@ class basic_json
     /*!
     @brief add an object to an object if key does not exist
 
-    Inserts a new element into a JSON object constructed in-place with the given
-    @a args if there is no element with the key in the container. If the
+    Inserts a new element into a JSON object constructed in-place with the
+    given @a args if there is no element with the key in the container. If the
     function is called on a JSON null value, an empty object is created before
     appending the value created from @a args.
 
@@ -5118,7 +5174,7 @@ class basic_json
         // emplace only works for null objects or arrays
         if (not(is_null() or is_object()))
         {
-            throw std::domain_error("cannot use emplace() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use emplace() with " + type_name()));
         }
 
         // transform null object into an object
@@ -5154,8 +5210,8 @@ class basic_json
     @throw std::domain_error if @a pos is not an iterator of *this; example:
     `"iterator does not fit current value"`
 
-    @complexity Constant plus linear in the distance between pos and end of the
-    container.
+    @complexity Constant plus linear in the distance between pos and end of
+    the container.
 
     @liveexample{The example shows how `insert()` is used.,insert}
 
@@ -5169,7 +5225,7 @@ class basic_json
             // check if iterator pos fits to this JSON value
             if (pos.m_object != this)
             {
-                throw std::domain_error("iterator does not fit current value");
+                JSON_THROW(std::domain_error("iterator does not fit current value"));
             }
 
             // insert to array and return iterator
@@ -5177,10 +5233,8 @@ class basic_json
             result.m_it.array_iterator = m_value.array->insert(pos.m_it.array_iterator, val);
             return result;
         }
-        else
-        {
-            throw std::domain_error("cannot use insert() with " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("cannot use insert() with " + type_name()));
     }
 
     /*!
@@ -5224,7 +5278,7 @@ class basic_json
             // check if iterator pos fits to this JSON value
             if (pos.m_object != this)
             {
-                throw std::domain_error("iterator does not fit current value");
+                JSON_THROW(std::domain_error("iterator does not fit current value"));
             }
 
             // insert to array and return iterator
@@ -5232,10 +5286,8 @@ class basic_json
             result.m_it.array_iterator = m_value.array->insert(pos.m_it.array_iterator, cnt, val);
             return result;
         }
-        else
-        {
-            throw std::domain_error("cannot use insert() with " + type_name());
-        }
+
+        JSON_THROW(std::domain_error("cannot use insert() with " + type_name()));
     }
 
     /*!
@@ -5273,24 +5325,24 @@ class basic_json
         // insert only works for arrays
         if (not is_array())
         {
-            throw std::domain_error("cannot use insert() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use insert() with " + type_name()));
         }
 
         // check if iterator pos fits to this JSON value
         if (pos.m_object != this)
         {
-            throw std::domain_error("iterator does not fit current value");
+            JSON_THROW(std::domain_error("iterator does not fit current value"));
         }
 
         // check if range iterators belong to the same JSON object
         if (first.m_object != last.m_object)
         {
-            throw std::domain_error("iterators do not fit");
+            JSON_THROW(std::domain_error("iterators do not fit"));
         }
 
         if (first.m_object == this or last.m_object == this)
         {
-            throw std::domain_error("passed iterators may not belong to container");
+            JSON_THROW(std::domain_error("passed iterators may not belong to container"));
         }
 
         // insert to array and return iterator
@@ -5331,13 +5383,13 @@ class basic_json
         // insert only works for arrays
         if (not is_array())
         {
-            throw std::domain_error("cannot use insert() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use insert() with " + type_name()));
         }
 
         // check if iterator pos fits to this JSON value
         if (pos.m_object != this)
         {
-            throw std::domain_error("iterator does not fit current value");
+            JSON_THROW(std::domain_error("iterator does not fit current value"));
         }
 
         // insert to array and return iterator
@@ -5385,8 +5437,8 @@ class basic_json
 
     @param[in,out] other array to exchange the contents with
 
-    @throw std::domain_error when JSON value is not an array; example: `"cannot
-    use swap() with string"`
+    @throw std::domain_error when JSON value is not an array; example:
+    `"cannot use swap() with string"`
 
     @complexity Constant.
 
@@ -5404,7 +5456,7 @@ class basic_json
         }
         else
         {
-            throw std::domain_error("cannot use swap() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use swap() with " + type_name()));
         }
     }
 
@@ -5437,7 +5489,7 @@ class basic_json
         }
         else
         {
-            throw std::domain_error("cannot use swap() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use swap() with " + type_name()));
         }
     }
 
@@ -5470,7 +5522,7 @@ class basic_json
         }
         else
         {
-            throw std::domain_error("cannot use swap() with " + type_name());
+            JSON_THROW(std::domain_error("cannot use swap() with " + type_name()));
         }
     }
 
@@ -6113,7 +6165,7 @@ class basic_json
     {
         // assertion to check that the iterator range is indeed contiguous,
         // see http://stackoverflow.com/a/35008842/266378 for more discussion
-        assert(std::accumulate(first, last, std::make_pair<bool, int>(true, 0),
+        assert(std::accumulate(first, last, std::pair<bool, int>(true, 0),
                                [&first](std::pair<bool, int> res, decltype(*first) val)
         {
             res.first &= (val == *(std::next(std::addressof(*first), res.second++)));
@@ -6314,11 +6366,11 @@ class basic_json
     {
         if (current_index + sizeof(T) + 1 > vec.size())
         {
-            throw std::out_of_range("cannot read " + std::to_string(sizeof(T)) + " bytes from vector");
+            JSON_THROW(std::out_of_range("cannot read " + std::to_string(sizeof(T)) + " bytes from vector"));
         }
 
         T result;
-        uint8_t* ptr = reinterpret_cast<uint8_t*>(&result);
+        auto* ptr = reinterpret_cast<uint8_t*>(&result);
         for (size_t i = 0; i < sizeof(T); ++i)
         {
             *ptr++ = vec[current_index + sizeof(T) - i];
@@ -6359,8 +6411,9 @@ class basic_json
                 if (j.m_value.number_integer >= 0)
                 {
                     // MessagePack does not differentiate between positive
-                    // signed integers and unsigned integers. Therefore, we used
-                    // the code from the value_t::number_unsigned case here.
+                    // signed integers and unsigned integers. Therefore, we
+                    // used the code from the value_t::number_unsigned case
+                    // here.
                     if (j.m_value.number_unsigned < 128)
                     {
                         // positive fixnum
@@ -6464,7 +6517,7 @@ class basic_json
             {
                 // float 64
                 v.push_back(0xcb);
-                const uint8_t* helper = reinterpret_cast<const uint8_t*>(&(j.m_value.number_float));
+                const auto* helper = reinterpret_cast<const uint8_t*>(&(j.m_value.number_float));
                 for (size_t i = 0; i < 8; ++i)
                 {
                     v.push_back(helper[7 - i]);
@@ -6635,8 +6688,8 @@ class basic_json
                 }
                 else
                 {
-                    // The conversions below encode the sign in the first byte,
-                    // and the value is converted to a positive number.
+                    // The conversions below encode the sign in the first
+                    // byte, and the value is converted to a positive number.
                     const auto positive_number = -1 - j.m_value.number_integer;
                     if (j.m_value.number_integer >= -24)
                     {
@@ -6707,7 +6760,7 @@ class basic_json
             {
                 // Double-Precision Float
                 v.push_back(0xfb);
-                const uint8_t* helper = reinterpret_cast<const uint8_t*>(&(j.m_value.number_float));
+                const auto* helper = reinterpret_cast<const uint8_t*>(&(j.m_value.number_float));
                 for (size_t i = 0; i < 8; ++i)
                 {
                     v.push_back(helper[7 - i]);
@@ -6841,12 +6894,12 @@ class basic_json
 
     To secure the access to the byte vector during CBOR/MessagePack
     deserialization, bytes are copied from the vector into buffers. This
-    function checks if the number of bytes to copy (@a len) does not exceed the
-    size @s size of the vector. Additionally, an @a offset is given from where
-    to start reading the bytes.
+    function checks if the number of bytes to copy (@a len) does not exceed
+    the size @s size of the vector. Additionally, an @a offset is given from
+    where to start reading the bytes.
 
-    This function checks whether reading the bytes is safe; that is, offset is a
-    valid index in the vector, offset+len
+    This function checks whether reading the bytes is safe; that is, offset is
+    a valid index in the vector, offset+len
 
     @param[in] size    size of the byte vector
     @param[in] len     number of bytes to read
@@ -6863,34 +6916,19 @@ class basic_json
         // simple case: requested length is greater than the vector's length
         if (len > size or offset > size)
         {
-            throw std::out_of_range("len out of range");
+            JSON_THROW(std::out_of_range("len out of range"));
         }
 
         // second case: adding offset would result in overflow
         if ((size > (std::numeric_limits<size_t>::max() - offset)))
         {
-            throw std::out_of_range("len+offset out of range");
+            JSON_THROW(std::out_of_range("len+offset out of range"));
         }
-    }
 
-    /*!
-    @brief checks if a given length does not exceed the size of a given vector
-
-    To secure the access to the byte vector during CBOR/MessagePack
-    deserialization, bytes are copied from the vector into buffers. This
-    function checks if the number of bytes to copy (@a len) does not exceed the
-    size of the given vector @a vec.
-
-    @param[in] vec  byte vector
-    @param[in] len  length
-
-    @throws out_of_range if `len > v.size()`
-    */
-    static void check_length(const std::vector<uint8_t>& vec, const size_t& len)
-    {
-        if (len > vec.size())
+        // last case: reading past the end of the vector
+        if (len + offset > size)
         {
-            throw std::out_of_range("len out of range");
+            JSON_THROW(std::out_of_range("len+offset out of range"));
         }
     }
 
@@ -6910,6 +6948,9 @@ class basic_json
     */
     static basic_json from_msgpack_internal(const std::vector<uint8_t>& v, size_t& idx)
     {
+        // make sure reading 1 byte is safe
+        check_length(v.size(), 1, idx);
+
         // store and increment index
         const size_t current_idx = idx++;
 
@@ -6919,7 +6960,7 @@ class basic_json
             {
                 return v[current_idx];
             }
-            else if (v[current_idx] <= 0x8f) // fixmap
+            if (v[current_idx] <= 0x8f) // fixmap
             {
                 basic_json result = value_t::object;
                 const size_t len = v[current_idx] & 0x0f;
@@ -6978,7 +7019,7 @@ class basic_json
                     float res;
                     for (size_t byte = 0; byte < sizeof(float); ++byte)
                     {
-                        reinterpret_cast<uint8_t*>(&res)[sizeof(float) - byte - 1] = v[current_idx + 1 + byte];
+                        reinterpret_cast<uint8_t*>(&res)[sizeof(float) - byte - 1] = v.at(current_idx + 1 + byte);
                     }
                     idx += sizeof(float); // skip content bytes
                     return res;
@@ -6990,7 +7031,7 @@ class basic_json
                     double res;
                     for (size_t byte = 0; byte < sizeof(double); ++byte)
                     {
-                        reinterpret_cast<uint8_t*>(&res)[sizeof(double) - byte - 1] = v[current_idx + 1 + byte];
+                        reinterpret_cast<uint8_t*>(&res)[sizeof(double) - byte - 1] = v.at(current_idx + 1 + byte);
                     }
                     idx += sizeof(double); // skip content bytes
                     return res;
@@ -7123,7 +7164,7 @@ class basic_json
 
                 default:
                 {
-                    throw std::invalid_argument("error parsing a msgpack @ " + std::to_string(current_idx) + ": " + std::to_string(static_cast<int>(v[current_idx])));
+                    JSON_THROW(std::invalid_argument("error parsing a msgpack @ " + std::to_string(current_idx) + ": " + std::to_string(static_cast<int>(v[current_idx]))));
                 }
             }
         }
@@ -7148,7 +7189,7 @@ class basic_json
         // store and increment index
         const size_t current_idx = idx++;
 
-        switch (v[current_idx])
+        switch (v.at(current_idx))
         {
             // Integer 0x00..0x17 (0..23)
             case 0x00:
@@ -7329,7 +7370,7 @@ class basic_json
             case 0x7f: // UTF-8 string (indefinite length)
             {
                 std::string result;
-                while (v[idx] != 0xff)
+                while (v.at(idx) != 0xff)
                 {
                     string_t s = from_cbor_internal(v, idx);
                     result += s;
@@ -7425,7 +7466,7 @@ class basic_json
             case 0x9f: // array (indefinite length)
             {
                 basic_json result = value_t::array;
-                while (v[idx] != 0xff)
+                while (v.at(idx) != 0xff)
                 {
                     result.push_back(from_cbor_internal(v, idx));
                 }
@@ -7525,7 +7566,7 @@ class basic_json
             case 0xbf: // map (indefinite length)
             {
                 basic_json result = value_t::object;
-                while (v[idx] != 0xff)
+                while (v.at(idx) != 0xff)
                 {
                     std::string key = from_cbor_internal(v, idx);
                     result[key] = from_cbor_internal(v, idx);
@@ -7561,7 +7602,7 @@ class basic_json
                 // include at least decoding support for them even without such
                 // support. An example of a small decoder for half-precision
                 // floating-point numbers in the C language is shown in Fig. 3.
-                const int half = (v[current_idx + 1] << 8) + v[current_idx + 2];
+                const int half = (v.at(current_idx + 1) << 8) + v.at(current_idx + 2);
                 const int exp = (half >> 10) & 0x1f;
                 const int mant = half & 0x3ff;
                 double val;
@@ -7577,7 +7618,7 @@ class basic_json
                 {
                     val = mant == 0 ? INFINITY : NAN;
                 }
-                return half & 0x8000 ? -val : val;
+                return (half & 0x8000) != 0 ? -val : val;
             }
 
             case 0xfa: // Single-Precision Float (four-byte IEEE 754)
@@ -7586,7 +7627,7 @@ class basic_json
                 float res;
                 for (size_t byte = 0; byte < sizeof(float); ++byte)
                 {
-                    reinterpret_cast<uint8_t*>(&res)[sizeof(float) - byte - 1] = v[current_idx + 1 + byte];
+                    reinterpret_cast<uint8_t*>(&res)[sizeof(float) - byte - 1] = v.at(current_idx + 1 + byte);
                 }
                 idx += sizeof(float); // skip content bytes
                 return res;
@@ -7598,7 +7639,7 @@ class basic_json
                 double res;
                 for (size_t byte = 0; byte < sizeof(double); ++byte)
                 {
-                    reinterpret_cast<uint8_t*>(&res)[sizeof(double) - byte - 1] = v[current_idx + 1 + byte];
+                    reinterpret_cast<uint8_t*>(&res)[sizeof(double) - byte - 1] = v.at(current_idx + 1 + byte);
                 }
                 idx += sizeof(double); // skip content bytes
                 return res;
@@ -7606,7 +7647,7 @@ class basic_json
 
             default: // anything else (0xFF is handled inside the other types)
             {
-                throw std::invalid_argument("error parsing a CBOR @ " + std::to_string(current_idx) + ": " + std::to_string(static_cast<int>(v[current_idx])));
+                JSON_THROW(std::invalid_argument("error parsing a CBOR @ " + std::to_string(current_idx) + ": " + std::to_string(static_cast<int>(v[current_idx]))));
             }
         }
     }
@@ -7663,11 +7704,6 @@ class basic_json
     */
     static basic_json from_msgpack(const std::vector<uint8_t>& v)
     {
-        if (v.empty())
-        {
-            throw std::invalid_argument("empty vector");
-        }
-
         size_t i = 0;
         return from_msgpack_internal(v, i);
     }
@@ -7725,11 +7761,6 @@ class basic_json
     */
     static basic_json from_cbor(const std::vector<uint8_t>& v)
     {
-        if (v.empty())
-        {
-            throw std::invalid_argument("empty vector");
-        }
-
         size_t i = 0;
         return from_cbor_internal(v, i);
     }
@@ -7808,10 +7839,8 @@ class basic_json
                         // from c (1 byte) to \uxxxx (6 bytes)
                         return res + 5;
                     }
-                    else
-                    {
-                        return res;
-                    }
+
+                    return res;
                 }
             }
         });
@@ -8508,7 +8537,7 @@ class basic_json
 
                 case basic_json::value_t::null:
                 {
-                    throw std::out_of_range("cannot get value");
+                    JSON_THROW(std::out_of_range("cannot get value"));
                 }
 
                 default:
@@ -8517,10 +8546,8 @@ class basic_json
                     {
                         return *m_object;
                     }
-                    else
-                    {
-                        throw std::out_of_range("cannot get value");
-                    }
+
+                    JSON_THROW(std::out_of_range("cannot get value"));
                 }
             }
         }
@@ -8553,10 +8580,8 @@ class basic_json
                     {
                         return m_object;
                     }
-                    else
-                    {
-                        throw std::out_of_range("cannot get value");
-                    }
+
+                    JSON_THROW(std::out_of_range("cannot get value"));
                 }
             }
         }
@@ -8656,7 +8681,7 @@ class basic_json
             // if objects are not the same, the comparison is undefined
             if (m_object != other.m_object)
             {
-                throw std::domain_error("cannot compare iterators of different containers");
+                JSON_THROW(std::domain_error("cannot compare iterators of different containers"));
             }
 
             assert(m_object != nullptr);
@@ -8698,7 +8723,7 @@ class basic_json
             // if objects are not the same, the comparison is undefined
             if (m_object != other.m_object)
             {
-                throw std::domain_error("cannot compare iterators of different containers");
+                JSON_THROW(std::domain_error("cannot compare iterators of different containers"));
             }
 
             assert(m_object != nullptr);
@@ -8707,7 +8732,7 @@ class basic_json
             {
                 case basic_json::value_t::object:
                 {
-                    throw std::domain_error("cannot compare order of object iterators");
+                    JSON_THROW(std::domain_error("cannot compare order of object iterators"));
                 }
 
                 case basic_json::value_t::array:
@@ -8761,7 +8786,7 @@ class basic_json
             {
                 case basic_json::value_t::object:
                 {
-                    throw std::domain_error("cannot use offsets with object iterators");
+                    JSON_THROW(std::domain_error("cannot use offsets with object iterators"));
                 }
 
                 case basic_json::value_t::array:
@@ -8823,7 +8848,7 @@ class basic_json
             {
                 case basic_json::value_t::object:
                 {
-                    throw std::domain_error("cannot use offsets with object iterators");
+                    JSON_THROW(std::domain_error("cannot use offsets with object iterators"));
                 }
 
                 case basic_json::value_t::array:
@@ -8850,7 +8875,7 @@ class basic_json
             {
                 case basic_json::value_t::object:
                 {
-                    throw std::domain_error("cannot use operator[] for object iterators");
+                    JSON_THROW(std::domain_error("cannot use operator[] for object iterators"));
                 }
 
                 case basic_json::value_t::array:
@@ -8860,7 +8885,7 @@ class basic_json
 
                 case basic_json::value_t::null:
                 {
-                    throw std::out_of_range("cannot get value");
+                    JSON_THROW(std::out_of_range("cannot get value"));
                 }
 
                 default:
@@ -8869,10 +8894,8 @@ class basic_json
                     {
                         return *m_object;
                     }
-                    else
-                    {
-                        throw std::out_of_range("cannot get value");
-                    }
+
+                    JSON_THROW(std::out_of_range("cannot get value"));
                 }
             }
         }
@@ -8889,10 +8912,8 @@ class basic_json
             {
                 return m_it.object_iterator->first;
             }
-            else
-            {
-                throw std::domain_error("cannot use key() for non-object iterators");
-            }
+
+            JSON_THROW(std::domain_error("cannot use key() for non-object iterators"));
         }
 
         /*!
@@ -9077,7 +9098,7 @@ class basic_json
             // immediately abort if stream is erroneous
             if (s.fail())
             {
-                throw std::invalid_argument("stream error");
+                JSON_THROW(std::invalid_argument("stream error"));
             }
 
             // fill buffer
@@ -9144,7 +9165,7 @@ class basic_json
                 }
                 else
                 {
-                    throw std::invalid_argument("missing or wrong low surrogate");
+                    JSON_THROW(std::invalid_argument("missing or wrong low surrogate"));
                 }
             }
 
@@ -9178,7 +9199,7 @@ class basic_json
             }
             else
             {
-                throw std::out_of_range("code points above 0x10FFFF are invalid");
+                JSON_THROW(std::out_of_range("code points above 0x10FFFF are invalid"));
             }
 
             return result;
@@ -9367,7 +9388,7 @@ class basic_json
             assert(m_marker == nullptr or m_marker  <= m_limit);
 
             // number of processed characters (p)
-            const size_t num_processed_chars = static_cast<size_t>(m_start - m_content);
+            const auto num_processed_chars = static_cast<size_t>(m_start - m_content);
             // offset for m_marker wrt. to m_start
             const auto offset_marker = (m_marker == nullptr) ? 0 : m_marker - m_start;
             // number of unprocessed characters (u)
@@ -9560,7 +9581,7 @@ class basic_json
                                 // make sure there is a subsequent unicode
                                 if ((i + 6 >= m_limit) or * (i + 5) != '\\' or * (i + 6) != 'u')
                                 {
-                                    throw std::invalid_argument("missing low surrogate");
+                                    JSON_THROW(std::invalid_argument("missing low surrogate"));
                                 }
 
                                 // get code yyyy from uxxxx\uyyyy
@@ -9573,7 +9594,7 @@ class basic_json
                             else if (codepoint >= 0xDC00 and codepoint <= 0xDFFF)
                             {
                                 // we found a lone low surrogate
-                                throw std::invalid_argument("missing high surrogate");
+                                JSON_THROW(std::invalid_argument("missing high surrogate"));
                             }
                             else
                             {
@@ -9759,7 +9780,7 @@ class basic_json
             else
             {
                 // parse with strtod
-                result.m_value.number_float = str_to_float_t(static_cast<number_float_t*>(nullptr), NULL);
+                result.m_value.number_float = str_to_float_t(static_cast<number_float_t*>(nullptr), nullptr);
 
                 // replace infinity and NAN by null
                 if (not std::isfinite(result.m_value.number_float))
@@ -10051,7 +10072,7 @@ class basic_json
                               "'") :
                               lexer::token_type_name(last_token));
                 error_msg += "; expected " + lexer::token_type_name(t);
-                throw std::invalid_argument(error_msg);
+                JSON_THROW(std::invalid_argument(error_msg));
             }
         }
 
@@ -10063,7 +10084,7 @@ class basic_json
                 error_msg += (last_token == lexer::token_type::parse_error ? ("'" +  m_lexer.get_token_string() +
                               "'") :
                               lexer::token_type_name(last_token));
-                throw std::invalid_argument(error_msg);
+                JSON_THROW(std::invalid_argument(error_msg));
             }
         }
 
@@ -10159,7 +10180,7 @@ class basic_json
         {
             if (is_root())
             {
-                throw std::domain_error("JSON pointer has no parent");
+                JSON_THROW(std::domain_error("JSON pointer has no parent"));
             }
 
             auto last = reference_tokens.back();
@@ -10177,7 +10198,7 @@ class basic_json
         {
             if (is_root())
             {
-                throw std::domain_error("JSON pointer has no parent");
+                JSON_THROW(std::domain_error("JSON pointer has no parent"));
             }
 
             json_pointer result = *this;
@@ -10238,7 +10259,7 @@ class basic_json
                     */
                     default:
                     {
-                        throw std::domain_error("invalid value to unflatten");
+                        JSON_THROW(std::domain_error("invalid value to unflatten"));
                     }
                 }
             }
@@ -10306,7 +10327,7 @@ class basic_json
                         // error condition (cf. RFC 6901, Sect. 4)
                         if (reference_token.size() > 1 and reference_token[0] == '0')
                         {
-                            throw std::domain_error("array index must not begin with '0'");
+                            JSON_THROW(std::domain_error("array index must not begin with '0'"));
                         }
 
                         if (reference_token == "-")
@@ -10324,7 +10345,7 @@ class basic_json
 
                     default:
                     {
-                        throw std::out_of_range("unresolved reference token '" + reference_token + "'");
+                        JSON_THROW(std::out_of_range("unresolved reference token '" + reference_token + "'"));
                     }
                 }
             }
@@ -10358,7 +10379,7 @@ class basic_json
                         // error condition (cf. RFC 6901, Sect. 4)
                         if (reference_token.size() > 1 and reference_token[0] == '0')
                         {
-                            throw std::domain_error("array index must not begin with '0'");
+                            JSON_THROW(std::domain_error("array index must not begin with '0'"));
                         }
 
                         // note: at performs range check
@@ -10368,7 +10389,7 @@ class basic_json
 
                     default:
                     {
-                        throw std::out_of_range("unresolved reference token '" + reference_token + "'");
+                        JSON_THROW(std::out_of_range("unresolved reference token '" + reference_token + "'"));
                     }
                 }
             }
@@ -10410,7 +10431,7 @@ class basic_json
                         // error condition (cf. RFC 6901, Sect. 4)
                         if (reference_token.size() > 1 and reference_token[0] == '0')
                         {
-                            throw std::domain_error("array index must not begin with '0'");
+                            JSON_THROW(std::domain_error("array index must not begin with '0'"));
                         }
 
                         // use unchecked array access
@@ -10420,7 +10441,7 @@ class basic_json
 
                     default:
                     {
-                        throw std::out_of_range("unresolved reference token '" + reference_token + "'");
+                        JSON_THROW(std::out_of_range("unresolved reference token '" + reference_token + "'"));
                     }
                 }
             }
@@ -10454,7 +10475,7 @@ class basic_json
                         // error condition (cf. RFC 6901, Sect. 4)
                         if (reference_token.size() > 1 and reference_token[0] == '0')
                         {
-                            throw std::domain_error("array index must not begin with '0'");
+                            JSON_THROW(std::domain_error("array index must not begin with '0'"));
                         }
 
                         // note: at performs range check
@@ -10464,7 +10485,7 @@ class basic_json
 
                     default:
                     {
-                        throw std::out_of_range("unresolved reference token '" + reference_token + "'");
+                        JSON_THROW(std::out_of_range("unresolved reference token '" + reference_token + "'"));
                     }
                 }
             }
@@ -10486,7 +10507,7 @@ class basic_json
             // check if nonempty reference string begins with slash
             if (reference_string[0] != '/')
             {
-                throw std::domain_error("JSON pointer must be empty or begin with '/'");
+                JSON_THROW(std::domain_error("JSON pointer must be empty or begin with '/'"));
             }
 
             // extract the reference tokens:
@@ -10494,7 +10515,7 @@ class basic_json
             // - start: position after the previous slash
             for (
                 // search for the first slash after the first character
-                size_t slash = reference_string.find_first_of("/", 1),
+                size_t slash = reference_string.find_first_of('/', 1),
                 // set the beginning of the first reference token
                 start = 1;
                 // we can stop if start == string::npos+1 = 0
@@ -10503,16 +10524,16 @@ class basic_json
                 // (will eventually be 0 if slash == std::string::npos)
                 start = slash + 1,
                 // find next slash
-                slash = reference_string.find_first_of("/", start))
+                slash = reference_string.find_first_of('/', start))
             {
                 // use the text between the beginning of the reference token
                 // (start) and the last slash (slash).
                 auto reference_token = reference_string.substr(start, slash - start);
 
                 // check reference tokens are properly escaped
-                for (size_t pos = reference_token.find_first_of("~");
+                for (size_t pos = reference_token.find_first_of('~');
                         pos != std::string::npos;
-                        pos = reference_token.find_first_of("~", pos + 1))
+                        pos = reference_token.find_first_of('~', pos + 1))
                 {
                     assert(reference_token[pos] == '~');
 
@@ -10521,7 +10542,7 @@ class basic_json
                             (reference_token[pos + 1] != '0' and
                              reference_token[pos + 1] != '1'))
                     {
-                        throw std::domain_error("escape error: '~' must be followed with '0' or '1'");
+                        JSON_THROW(std::domain_error("escape error: '~' must be followed with '0' or '1'"));
                     }
                 }
 
@@ -10647,7 +10668,7 @@ class basic_json
         {
             if (not value.is_object())
             {
-                throw std::domain_error("only objects can be unflattened");
+                JSON_THROW(std::domain_error("only objects can be unflattened"));
             }
 
             basic_json result;
@@ -10657,7 +10678,7 @@ class basic_json
             {
                 if (not element.second.is_primitive())
                 {
-                    throw std::domain_error("values in object must be primitive");
+                    JSON_THROW(std::domain_error("values in object must be primitive"));
                 }
 
                 // assign value to reference pointed to by JSON pointer; Note
@@ -10986,7 +11007,7 @@ class basic_json
                             if (static_cast<size_type>(idx) > parent.size())
                             {
                                 // avoid undefined behavior
-                                throw std::out_of_range("array index " + std::to_string(idx) + " is out of range");
+                                JSON_THROW(std::out_of_range("array index " + std::to_string(idx) + " is out of range"));
                             }
                             else
                             {
@@ -11024,7 +11045,7 @@ class basic_json
                 }
                 else
                 {
-                    throw std::out_of_range("key '" + last_path + "' not found");
+                    JSON_THROW(std::out_of_range("key '" + last_path + "' not found"));
                 }
             }
             else if (parent.is_array())
@@ -11038,7 +11059,7 @@ class basic_json
         if (not json_patch.is_array())
         {
             // a JSON patch must be an array of objects
-            throw std::invalid_argument("JSON patch must be an array of objects");
+            JSON_THROW(std::invalid_argument("JSON patch must be an array of objects"));
         }
 
         // iterate and apply th eoperations
@@ -11058,13 +11079,13 @@ class basic_json
                 // check if desired value is present
                 if (it == val.m_value.object->end())
                 {
-                    throw std::invalid_argument(error_msg + " must have member '" + member + "'");
+                    JSON_THROW(std::invalid_argument(error_msg + " must have member '" + member + "'"));
                 }
 
                 // check if result is of type string
                 if (string_type and not it->second.is_string())
                 {
-                    throw std::invalid_argument(error_msg + " must have string member '" + member + "'");
+                    JSON_THROW(std::invalid_argument(error_msg + " must have string member '" + member + "'"));
                 }
 
                 // no error: return value
@@ -11074,7 +11095,7 @@ class basic_json
             // type check
             if (not val.is_object())
             {
-                throw std::invalid_argument("JSON patch must be an array of objects");
+                JSON_THROW(std::invalid_argument("JSON patch must be an array of objects"));
             }
 
             // collect mandatory members
@@ -11133,13 +11154,13 @@ class basic_json
                 case patch_operations::test:
                 {
                     bool success = false;
-                    try
+                    JSON_TRY
                     {
                         // check if "value" matches the one at "path"
                         // the "path" location must exist - use at()
                         success = (result.at(ptr) == get_value("test", "value", false));
                     }
-                    catch (std::out_of_range&)
+                    JSON_CATCH (std::out_of_range&)
                     {
                         // ignore out of range errors: success remains false
                     }
@@ -11147,7 +11168,7 @@ class basic_json
                     // throw an exception if test fails
                     if (not success)
                     {
-                        throw std::domain_error("unsuccessful: " + val.dump());
+                        JSON_THROW(std::domain_error("unsuccessful: " + val.dump()));
                     }
 
                     break;
@@ -11157,7 +11178,7 @@ class basic_json
                 {
                     // op must be "add", "remove", "replace", "move", "copy", or
                     // "test"
-                    throw std::invalid_argument("operation value '" + op + "' is invalid");
+                    JSON_THROW(std::invalid_argument("operation value '" + op + "' is invalid"));
                 }
             }
         }
@@ -11346,7 +11367,7 @@ uses the standard template types.
 @since version 1.0.0
 */
 using json = basic_json<>;
-}
+} // namespace nlohmann
 
 
 ///////////////////////
@@ -11387,7 +11408,7 @@ struct hash<nlohmann::json>
         return h(j.dump());
     }
 };
-}
+} // namespace std
 
 /*!
 @brief user-defined string literal for JSON values
@@ -11429,5 +11450,11 @@ inline nlohmann::json::json_pointer operator "" _json_pointer(const char* s, std
 #if defined(__clang__) || defined(__GNUC__) || defined(__GNUG__)
     #pragma GCC diagnostic pop
 #endif
+
+// clean up
+#undef JSON_THROW
+#undef JSON_TRY
+#undef JSON_CATCH
+#undef JSON_DEPRECATED
 
 #endif

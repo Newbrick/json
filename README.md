@@ -2,9 +2,10 @@
 
 [![Build Status](https://travis-ci.org/nlohmann/json.svg?branch=master)](https://travis-ci.org/nlohmann/json)
 [![Build Status](https://ci.appveyor.com/api/projects/status/1acb366xfyg3qybk/branch/develop?svg=true)](https://ci.appveyor.com/project/nlohmann/json)
+[![Build status](https://doozer.io/badge/nlohmann/json/buildstatus/develop)](https://doozer.io/user/nlohmann/json)
 [![Coverage Status](https://img.shields.io/coveralls/nlohmann/json.svg)](https://coveralls.io/r/nlohmann/json)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/5550/badge.svg)](https://scan.coverity.com/projects/nlohmann-json)
-[![Try online](https://img.shields.io/badge/try-online-blue.svg)](http://melpon.org/wandbox/permlink/8soFCqS532vOyZcK)
+[![Try online](https://img.shields.io/badge/try-online-blue.svg)](http://melpon.org/wandbox/permlink/IoZNMHqubixQx2dN)
 [![Documentation](https://img.shields.io/badge/docs-doxygen-blue.svg)](http://nlohmann.github.io/json)
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/nlohmann/json/master/LICENSE.MIT)
 [![Github Releases](https://img.shields.io/github/release/nlohmann/json.svg)](https://github.com/nlohmann/json/releases)
@@ -262,6 +263,9 @@ const std::string tmp = j[0];
 j[1] = 42;
 bool foo = j.at(2);
 
+// comparison
+j == "[\"foo\", 1, true]"_json;  // true
+
 // other stuff
 j.size();     // 3 entries
 j.empty();    // false
@@ -275,9 +279,6 @@ j.is_number();
 j.is_object();
 j.is_array();
 j.is_string();
-
-// comparison
-j == "[\"foo\", 1, true]"_json;  // true
 
 // create an object
 json o;
@@ -520,7 +521,7 @@ The following compilers are currently used in continuous integration at [Travis]
 
 The class is licensed under the [MIT License](http://opensource.org/licenses/MIT):
 
-Copyright &copy; 2013-2016 [Niels Lohmann](http://nlohmann.me)
+Copyright &copy; 2013-2017 [Niels Lohmann](http://nlohmann.me)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -585,8 +586,10 @@ I deeply appreciate the help of the following people.
 - [Jared Grubb](https://github.com/jaredgrubb) silenced a nasty documentation warning.
 - [Yixin Zhang](https://github.com/qwename) fixed an integer overflow check.
 - [Bosswestfalen](https://github.com/Bosswestfalen) merged two iterator classes into a smaller one.
+- [Daniel599](https://github.com/Daniel599) helped to get Travis execute the tests with Clang's sanitizers.
+- [Jonathan Lee](https://github.com/vjon) fixed an example in the README file.
 
-Thanks a lot for helping out!
+Thanks a lot for helping out! Please [let me know](mailto:mail@nlohmann.me) if I forgot someone.
 
 
 ## Notes
@@ -598,6 +601,9 @@ Thanks a lot for helping out!
   - Other encodings such as Latin-1, UTF-16, or UTF-32 are not supported and will yield parse errors.
   - [Unicode noncharacters](http://www.unicode.org/faq/private_use.html#nonchar1) will not be replaced by the library.
   - Invalid surrogates (e.g., incomplete pairs such as `\uDEAD`) will yield parse errors.
+  - The strings stored in the library are UTF-8 encoded. When using the default string type (`std::string`), note that its length/size functions return the number of stored bytes rather than the number of characters or glyphs.
+- The code can be compiled without C++ **runtime type identification** features; that is, you can use the `-fno-rtti` compiler flag.
+- **Exceptions** are used widly within the library. They can, however, be switched off with either using the compiler flag `-fno-exceptions` or by defining the symbol `JSON_NOEXCEPTION`. In this case, exceptions are replaced by an `abort()` call.
 
 
 ## Execute unit tests
@@ -608,7 +614,7 @@ To compile and run the tests, you need to execute
 $ make check
 
 ===============================================================================
-All tests passed (11201893 assertions in 43 test cases)
+All tests passed (11202040 assertions in 44 test cases)
 ```
 
 Alternatively, you can use [CMake](https://cmake.org) and run
